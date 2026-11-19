@@ -1,0 +1,1013 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createWorkOrder,
+  fetchMe,
+  fetchNotifications,
+  fetchWorkOrders,
+  login,
+  logout,
+  markNotificationsRead,
+  moneyFromCents,
+  patchWorkOrder,
+  resetPilotData,
+} from "@/lib/api-client";
+import type {
+  ActivityEvent,
+  Notification,
+  Property,
+  SessionUser,
+  Urgency,
+  Vendor,
+  WorkOrder,
+} from "@/lib/types";
+import { STATUS_LABELS } from "@/lib/types";
+import { Button, SectionLabel, StatusChip } from "@/components/ui";
+import OwnerFinancials from "@/components/pilot/OwnerFinancials";
+
+type Toast = string | null;
+
+export default function PilotApp() {
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [property, setProperty] = useState<Property | null>(null);
+  const [threshold, setThreshold] = useState(20000);
+  const [pilotUsers, setPilotUsers] = useState<
+    { email: string; name: string; role: string; passwordHint: string }[]
+  >([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<"home" | "new" | "detail" | "financials">(
+    "home",
+  );
+  const [toast, setToast] = useState<Toast>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const me = await fetchMe();
+    setUser(me.user);
+    setProperty(me.property);
+    setThreshold(me.policy?.ownerApprovalThresholdCents ?? 20000);
+    setPilotUsers(me.pilotUsers ?? []);
+    if (!me.user) {
+      setWorkOrders([]);
+      setNotifications([]);
+      setActivity([]);
+      setLoading(false);
+      return;
+    }
+    const [wo, notif] = await Promise.all([
+      fetchWorkOrders(),
+      fetchNotifications(),
+    ]);
+    setWorkOrders(wo.workOrders);
+    setVendors(wo.vendors);
+    setActivity(wo.activity);
+    setNotifications(notif.notifications);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refresh().catch((e) => {
+      setError(e.message);
+      setLoading(false);
+    });
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 3200);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  const selected = useMemo(
+    () => workOrders.find((w) => w.id === selectedId) || null,
+    [workOrders, selectedId],
+  );
+
+  const unread = notifications.filter((n) => !n.read).length;
+
+  async function handleLogin(email: string) {
+    setError(null);
+    try {
+      await login(email, "pilot");
+      setView("home");
+      setSelectedId(null);
+      await refresh();
+      setToast(`Signed in as ${email}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Login failed");
+    }
+  }
+
+  async function handleLogout() {
+    await logout();
+    setUser(null);
+    setView("home");
+    setSelectedId(null);
+    await refresh();
+  }
+
+  async function handleReset() {
+    try {
+      await resetPilotData();
+      setSelectedId(null);
+      setView("home");
+      await refresh();
+      setToast("Pilot data reset to seed story");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Reset failed");
+    }
+  }
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center text-sm text-[var(--muted)]">
+        Loading PropertMax pilot…
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <LoginScreen
+        pilotUsers={pilotUsers}
+        threshold={threshold}
+        error={error}
+        onLogin={handleLogin}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[var(--demo-banner)] text-white">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
+          <div className="min-w-0">
+            <p className="display text-sm font-semibold tracking-tight">
+              PropertMax
+            </p>
+            <p className="truncate text-xs text-white/55">
+              Phase 1 pilot · maintenance + owner financials · local JSON
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {user.role === "owner" && (
+              <button
+                type="button"
+                className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                onClick={() => setView("financials")}
+              >
+                Financials
+              </button>
+            )}
+            <StatusChip tone="accent">
+              {user.role} · {user.name}
+            </StatusChip>
+            {unread > 0 && (
+              <button
+                type="button"
+                className="rounded-full bg-[var(--warn)] px-2.5 py-1 text-xs font-semibold text-white"
+                onClick={() => markNotificationsRead().then(refresh)}
+              >
+                {unread} new
+              </button>
+            )}
+            <Button
+              variant="secondary"
+              className="!bg-white/10 !text-white !border-white/20"
+              onClick={handleReset}
+            >
+              Reset data
+            </Button>
+            <button
+              type="button"
+              className="text-xs text-white/65 hover:text-white"
+              onClick={handleLogout}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-6xl px-4 pb-16 pt-6 sm:px-6">
+        {error && (
+          <p className="mb-4 rounded-xl bg-[var(--danger-soft)] px-3 py-2 text-sm text-[var(--danger)]">
+            {error}
+          </p>
+        )}
+
+        {view === "home" && (
+          <RoleHome
+            user={user}
+            property={property}
+            workOrders={workOrders}
+            notifications={notifications}
+            activity={activity}
+            threshold={threshold}
+            onOpen={(id) => {
+              setSelectedId(id);
+              setView("detail");
+            }}
+            onNew={() => setView("new")}
+            onFinancials={() => setView("financials")}
+          />
+        )}
+
+        {view === "financials" && property && (
+          <OwnerFinancials
+            property={property}
+            onBack={() => setView("home")}
+            onOpenWorkOrder={(id) => {
+              setSelectedId(id);
+              setView("detail");
+            }}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "new" && property && (
+          <NewRequest
+            property={property}
+            onCancel={() => setView("home")}
+            onCreated={async (id) => {
+              await refresh();
+              setSelectedId(id);
+              setView("detail");
+              setToast("Work order created");
+            }}
+          />
+        )}
+
+        {view === "detail" && selected && property && (
+          <WorkOrderDetail
+            user={user}
+            property={property}
+            workOrder={selected}
+            vendors={vendors}
+            activity={activity.filter((a) => a.workOrderId === selected.id)}
+            threshold={threshold}
+            onBack={() => {
+              setView("home");
+              setSelectedId(null);
+            }}
+            onChanged={async (msg) => {
+              await refresh();
+              setToast(msg);
+            }}
+            onError={(msg) => setError(msg)}
+          />
+        )}
+      </div>
+
+      {toast && (
+        <div className="toast fixed bottom-5 left-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 rounded-2xl bg-[var(--ink)] px-4 py-3 text-sm font-medium text-white shadow-[var(--shadow-lift)]">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoginScreen({
+  pilotUsers,
+  threshold,
+  error,
+  onLogin,
+}: {
+  pilotUsers: { email: string; name: string; role: string; passwordHint: string }[];
+  threshold: number;
+  error: string | null;
+  onLogin: (email: string) => void;
+}) {
+  return (
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-5 py-12">
+      <p className="display text-3xl font-semibold text-[var(--ink)] sm:text-4xl">
+        PropertMax
+      </p>
+      <p className="mt-2 max-w-xl text-[var(--muted)]">
+        Phase 1 pilot — maintenance workflow + owner cash flow / projections.
+        Password for all sample users: <strong>pilot</strong>. Owner approval
+        required over {moneyFromCents(threshold)}.
+      </p>
+      <p className="mt-2 text-xs text-[var(--muted)]">
+        Persistence: local JSON file (`data/propertmax-store.json`). TODO:
+        Supabase Auth + Postgres RLS.
+      </p>
+      {error && (
+        <p className="mt-4 text-sm text-[var(--danger)]">{error}</p>
+      )}
+      <div className="mt-8 grid gap-3 sm:grid-cols-2">
+        {pilotUsers.map((u) => (
+          <button
+            key={u.email}
+            type="button"
+            onClick={() => onLogin(u.email)}
+            className="panel px-4 py-4 text-left transition hover:border-[var(--accent)]/40"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+              {u.role}
+            </p>
+            <p className="display mt-1 text-lg font-semibold">{u.name}</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">{u.email}</p>
+          </button>
+        ))}
+      </div>
+      <p className="mt-8 text-sm text-[var(--muted)]">
+        Prefer the clickable Sites prototype?{" "}
+        <a className="font-semibold text-[var(--accent)]" href="/sites-demo">
+          Open Sites demo →
+        </a>
+      </p>
+    </main>
+  );
+}
+
+function RoleHome({
+  user,
+  property,
+  workOrders,
+  notifications,
+  activity,
+  threshold,
+  onOpen,
+  onNew,
+  onFinancials,
+}: {
+  user: SessionUser;
+  property: Property | null;
+  workOrders: WorkOrder[];
+  notifications: Notification[];
+  activity: ActivityEvent[];
+  threshold: number;
+  onOpen: (id: string) => void;
+  onNew: () => void;
+  onFinancials: () => void;
+}) {
+  const attention = workOrders.filter((w) => {
+    if (user.role === "owner")
+      return w.status === "awaiting_owner_approval";
+    if (user.role === "manager")
+      return [
+        "reported",
+        "under_review",
+        "awaiting_estimate",
+        "approved",
+        "awaiting_owner_approval",
+      ].includes(w.status);
+    if (user.role === "contractor")
+      return ["assigned", "scheduled", "in_progress"].includes(w.status);
+    return true;
+  });
+
+  return (
+    <div className="space-y-5 fade-in">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <SectionLabel>
+            {user.name} · {user.role}
+          </SectionLabel>
+          <h1 className="display mt-1 text-3xl font-semibold">
+            {user.role === "contractor"
+              ? "Your jobs"
+              : user.role === "manager"
+                ? "Needs your attention"
+                : user.role === "owner"
+                  ? "Approvals & maintenance"
+                  : "Your home"}
+          </h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            {property?.address} · threshold {moneyFromCents(threshold)}{" "}
+            <span className="text-[var(--warn)]">(illustrative policy)</span>
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {user.role === "owner" && (
+            <Button onClick={onFinancials}>Open financials</Button>
+          )}
+          {(user.role === "tenant" || user.role === "manager") && (
+            <Button onClick={onNew}>Request repair</Button>
+          )}
+        </div>
+      </header>
+
+      {user.role === "owner" && property && (
+        <button
+          type="button"
+          onClick={onFinancials}
+          className="panel flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:border-[var(--accent)]/30"
+        >
+          <div>
+            <SectionLabel>Investment snapshot</SectionLabel>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Rent {moneyFromCents(property.monthlyRent * 100)} · estimated
+              monthly cash flow after ops + mortgage · projections & renovation
+              ROI
+            </p>
+          </div>
+          <span className="text-sm font-semibold text-[var(--accent)]">
+            Open →
+          </span>
+        </button>
+      )}
+
+      {user.role === "tenant" && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="panel px-4 py-4">
+            <p className="display text-lg font-semibold">Pay Rent</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Demo stub · {moneyFromCents((property?.monthlyRent || 0) * 100)}{" "}
+              due Dec 1
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onNew}
+            className="rounded-[var(--radius)] border border-transparent bg-[var(--accent)] px-4 py-4 text-left text-white shadow-[var(--shadow-soft)]"
+          >
+            <p className="display text-lg font-semibold">Request Repair</p>
+            <p className="mt-1 text-sm text-white/85">
+              Creates a durable work order
+            </p>
+          </button>
+          <div className="panel px-4 py-4">
+            <p className="display text-lg font-semibold">Message</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Use work-order thread for now
+            </p>
+          </div>
+        </div>
+      )}
+
+      <section className="panel overflow-hidden">
+        <div className="border-b border-[var(--line)] px-5 py-4">
+          <h2 className="display text-lg font-semibold">Work orders</h2>
+          <p className="text-sm text-[var(--muted)]">
+            {attention.length} relevant · server-enforced RBAC
+          </p>
+        </div>
+        <ul className="divide-y divide-[var(--line)]">
+          {attention.length === 0 && (
+            <li className="px-5 py-6 text-sm text-[var(--muted)]">
+              Nothing in your queue.
+            </li>
+          )}
+          {attention.map((w) => (
+            <li key={w.id}>
+              <button
+                type="button"
+                className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left hover:bg-[var(--surface-2)]"
+                onClick={() => onOpen(w.id)}
+              >
+                <span>
+                  <span className="block text-sm font-semibold">{w.title}</span>
+                  <span className="mt-0.5 block text-sm text-[var(--muted)]">
+                    {w.category} · {w.urgency}
+                    {w.estimateCents != null
+                      ? ` · ${moneyFromCents(w.estimateCents)}`
+                      : ""}
+                  </span>
+                </span>
+                <StatusChip
+                  tone={
+                    w.status === "awaiting_owner_approval"
+                      ? "warn"
+                      : w.status === "completed" || w.status === "approved"
+                        ? "positive"
+                        : "accent"
+                  }
+                >
+                  {STATUS_LABELS[w.status]}
+                </StatusChip>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="panel p-5">
+          <SectionLabel>Notifications</SectionLabel>
+          <ul className="mt-3 space-y-2">
+            {notifications.slice(0, 5).map((n) => (
+              <li
+                key={n.id}
+                className={`rounded-xl px-3 py-2 text-sm ${n.read ? "bg-[var(--surface-2)]" : "bg-[var(--accent-soft)]"}`}
+              >
+                <p className="font-semibold">{n.title}</p>
+                <p className="text-[var(--muted)]">{n.body}</p>
+              </li>
+            ))}
+            {notifications.length === 0 && (
+              <li className="text-sm text-[var(--muted)]">No notifications.</li>
+            )}
+          </ul>
+        </section>
+        <section className="panel p-5">
+          <SectionLabel>Activity history</SectionLabel>
+          <ul className="mt-3 space-y-2">
+            {activity.slice(0, 6).map((a) => (
+              <li key={a.id} className="text-sm">
+                <p className="text-[var(--ink-soft)]">{a.message}</p>
+                <p className="text-xs text-[var(--muted)]">
+                  {new Date(a.createdAt).toLocaleString()}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function NewRequest({
+  property,
+  onCancel,
+  onCreated,
+}: {
+  property: Property;
+  onCancel: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [details, setDetails] = useState("");
+  const [urgency, setUrgency] = useState<Urgency>("routine");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const prompts = [
+    {
+      title: "Bathroom exhaust fan rattling",
+      details:
+        "The bathroom fan makes a loud rattle when turned on. Started this week. Not an emergency.",
+      urgency: "routine" as Urgency,
+      category: "Electrical",
+    },
+    {
+      title: "Kitchen sink dripping again",
+      details: "Drip under spout after faucet was previously marked fixed.",
+      urgency: "soon" as Urgency,
+      category: "Plumbing",
+    },
+  ];
+
+  async function submit() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const { workOrder } = await createWorkOrder({
+        propertyId: property.id,
+        title,
+        details,
+        urgency,
+        category: title.toLowerCase().includes("fan")
+          ? "Electrical"
+          : "Plumbing",
+      });
+      onCreated(workOrder.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fade-in space-y-5">
+      <button
+        type="button"
+        className="text-sm font-medium text-[var(--accent)]"
+        onClick={onCancel}
+      >
+        ← Back
+      </button>
+      <h1 className="display text-3xl font-semibold">Request a repair</h1>
+      <div className="panel space-y-4 p-5">
+        <div className="flex flex-wrap gap-2">
+          {prompts.map((p) => (
+            <button
+              key={p.title}
+              type="button"
+              className="rounded-full border border-[var(--line-strong)] bg-white px-3 py-1.5 text-xs font-medium"
+              onClick={() => {
+                setTitle(p.title);
+                setDetails(p.details);
+                setUrgency(p.urgency);
+              }}
+            >
+              {p.title}
+            </button>
+          ))}
+        </div>
+        <input
+          className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
+          placeholder="Short title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <textarea
+          className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
+          rows={4}
+          placeholder="Details"
+          value={details}
+          onChange={(e) => setDetails(e.target.value)}
+        />
+        <div className="grid grid-cols-3 gap-2">
+          {(["routine", "soon", "urgent"] as Urgency[]).map((u) => (
+            <button
+              key={u}
+              type="button"
+              onClick={() => setUrgency(u)}
+              className={`rounded-xl border px-3 py-2 text-sm font-medium capitalize ${
+                urgency === u
+                  ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+                  : "border-[var(--line)]"
+              }`}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
+        {err && <p className="text-sm text-[var(--danger)]">{err}</p>}
+        <Button
+          disabled={busy || title.trim().length < 3 || details.trim().length < 4}
+          onClick={submit}
+        >
+          Submit work order
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function WorkOrderDetail({
+  user,
+  property,
+  workOrder,
+  vendors,
+  activity,
+  threshold,
+  onBack,
+  onChanged,
+  onError,
+}: {
+  user: SessionUser;
+  property: Property;
+  workOrder: WorkOrder;
+  vendors: Vendor[];
+  activity: ActivityEvent[];
+  threshold: number;
+  onBack: () => void;
+  onChanged: (msg: string) => void;
+  onError: (msg: string) => void;
+}) {
+  const [estimateDollars, setEstimateDollars] = useState("425");
+  const [estimateNotes, setEstimateNotes] = useState(
+    "Parts + labor. Illustrative quote.",
+  );
+  const [vendorId, setVendorId] = useState(vendors[0]?.id || "");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function run(action: () => Promise<void>, okMsg: string) {
+    setBusy(true);
+    try {
+      await action();
+      onChanged(okMsg);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fade-in space-y-5">
+      <button
+        type="button"
+        className="text-sm font-medium text-[var(--accent)]"
+        onClick={onBack}
+      >
+        ← Back to queue
+      </button>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <SectionLabel>{property.name}</SectionLabel>
+          <h1 className="display mt-1 text-3xl font-semibold">
+            {workOrder.title}
+          </h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            {workOrder.details}
+          </p>
+        </div>
+        <StatusChip
+          tone={
+            workOrder.status === "awaiting_owner_approval" ? "warn" : "accent"
+          }
+        >
+          {STATUS_LABELS[workOrder.status]}
+        </StatusChip>
+      </header>
+
+      <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+        <section className="panel space-y-4 p-5">
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-[var(--muted)]">Category</dt>
+              <dd className="font-medium">{workOrder.category}</dd>
+            </div>
+            <div>
+              <dt className="text-[var(--muted)]">Urgency</dt>
+              <dd className="font-medium capitalize">{workOrder.urgency}</dd>
+            </div>
+            <div>
+              <dt className="text-[var(--muted)]">Estimate</dt>
+              <dd className="money text-lg font-semibold">
+                {moneyFromCents(workOrder.estimateCents)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[var(--muted)]">Owner approval?</dt>
+              <dd className="font-medium">
+                {workOrder.requiresOwnerApproval
+                  ? `Yes (over ${moneyFromCents(threshold)})`
+                  : workOrder.estimateCents == null
+                    ? "Pending estimate"
+                    : `No (under ${moneyFromCents(threshold)})`}
+              </dd>
+            </div>
+          </dl>
+          {workOrder.estimateNotes && (
+            <p className="rounded-xl bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--ink-soft)]">
+              {workOrder.estimateNotes}
+            </p>
+          )}
+          {workOrder.ownerNote && (
+            <p className="rounded-xl bg-[var(--warn-soft)] px-3 py-2 text-sm text-[var(--warn)]">
+              Owner note: {workOrder.ownerNote}
+            </p>
+          )}
+
+          {/* Manager: add estimate */}
+          {user.role === "manager" &&
+            ["under_review", "reported", "awaiting_estimate"].includes(
+              workOrder.status,
+            ) && (
+              <div className="space-y-3 border-t border-[var(--line)] pt-4">
+                <p className="text-sm font-semibold">Add estimate</p>
+                <p className="text-xs text-[var(--muted)]">
+                  Over {moneyFromCents(threshold)} → owner must approve. At or
+                  under → auto-approved for assignment.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    className="w-28 rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                    value={estimateDollars}
+                    onChange={(e) => setEstimateDollars(e.target.value)}
+                    inputMode="decimal"
+                  />
+                  <select
+                    className="rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                    value={vendorId}
+                    onChange={(e) => setVendorId(e.target.value)}
+                  >
+                    {vendors.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <textarea
+                  className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                  rows={2}
+                  value={estimateNotes}
+                  onChange={(e) => setEstimateNotes(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        const cents = Math.round(
+                          parseFloat(estimateDollars) * 100,
+                        );
+                        await patchWorkOrder(workOrder.id, {
+                          action: "add_estimate",
+                          estimateCents: cents,
+                          estimateNotes,
+                          vendorId,
+                        });
+                      }, "Estimate saved")
+                    }
+                  >
+                    Save estimate (${estimateDollars || "0"})
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      setEstimateDollars("150");
+                      setEstimateNotes(
+                        "Under-threshold illustrative quote for auto-approve demo.",
+                      );
+                    }}
+                  >
+                    Try $150 (under threshold)
+                  </Button>
+                </div>
+              </div>
+            )}
+
+          {/* Owner decide */}
+          {user.role === "owner" &&
+            workOrder.status === "awaiting_owner_approval" && (
+              <div className="space-y-3 border-t border-[var(--line)] pt-4">
+                <p className="text-sm font-semibold">Your decision</p>
+                <textarea
+                  className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                  rows={2}
+                  placeholder="Optional note / question"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        () =>
+                          patchWorkOrder(workOrder.id, {
+                            action: "owner_decide",
+                            decision: "approved",
+                            note,
+                          }).then(() => undefined),
+                        "Approved",
+                      )
+                    }
+                  >
+                    Approve {moneyFromCents(workOrder.estimateCents)}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        () =>
+                          patchWorkOrder(workOrder.id, {
+                            action: "owner_decide",
+                            decision: "asked",
+                            note: note || "Can we get a second quote?",
+                          }).then(() => undefined),
+                        "Question sent",
+                      )
+                    }
+                  >
+                    Ask
+                  </Button>
+                  <Button
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        () =>
+                          patchWorkOrder(workOrder.id, {
+                            action: "owner_decide",
+                            decision: "declined",
+                            note: note || "Declined for now",
+                          }).then(() => undefined),
+                        "Declined",
+                      )
+                    }
+                  >
+                    Decline
+                  </Button>
+                </div>
+              </div>
+            )}
+
+          {/* Manager assign */}
+          {user.role === "manager" && workOrder.status === "approved" && (
+            <div className="space-y-3 border-t border-[var(--line)] pt-4">
+              <p className="text-sm font-semibold">Assign contractor</p>
+              <select
+                className="rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                value={vendorId}
+                onChange={(e) => setVendorId(e.target.value)}
+              >
+                {vendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                disabled={busy || !vendorId}
+                onClick={() =>
+                  run(
+                    () =>
+                      patchWorkOrder(workOrder.id, {
+                        action: "assign",
+                        vendorId,
+                      }).then(() => undefined),
+                    "Contractor assigned",
+                  )
+                }
+              >
+                Assign
+              </Button>
+            </div>
+          )}
+
+          {/* Contractor status */}
+          {(user.role === "contractor" || user.role === "manager") &&
+            ["assigned", "scheduled", "in_progress"].includes(
+              workOrder.status,
+            ) && (
+              <div className="flex flex-wrap gap-2 border-t border-[var(--line)] pt-4">
+                {workOrder.status === "assigned" && (
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        () =>
+                          patchWorkOrder(workOrder.id, {
+                            action: "status",
+                            status: "scheduled",
+                          }).then(() => undefined),
+                        "Scheduled",
+                      )
+                    }
+                  >
+                    Mark scheduled
+                  </Button>
+                )}
+                {["assigned", "scheduled"].includes(workOrder.status) && (
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        () =>
+                          patchWorkOrder(workOrder.id, {
+                            action: "status",
+                            status: "in_progress",
+                          }).then(() => undefined),
+                        "In progress",
+                      )
+                    }
+                  >
+                    Start work
+                  </Button>
+                )}
+                {["scheduled", "in_progress", "assigned"].includes(
+                  workOrder.status,
+                ) && (
+                  <Button
+                    variant="soft"
+                    disabled={busy}
+                    onClick={() =>
+                      run(
+                        () =>
+                          patchWorkOrder(workOrder.id, {
+                            action: "status",
+                            status: "completed",
+                          }).then(() => undefined),
+                        "Completed",
+                      )
+                    }
+                  >
+                    Complete job
+                  </Button>
+                )}
+              </div>
+            )}
+        </section>
+
+        <aside className="panel p-5">
+          <SectionLabel>Timeline / activity</SectionLabel>
+          <ol className="timeline-rail relative mt-4 space-y-4 pl-8">
+            {activity.map((a) => (
+              <li key={a.id} className="relative">
+                <span className="absolute -left-8 top-1 h-5 w-5 rounded-full border-2 border-[var(--accent)] bg-[var(--accent)]" />
+                <p className="text-sm font-medium text-[var(--ink-soft)]">
+                  {a.message}
+                </p>
+                <p className="text-xs text-[var(--muted)]">
+                  {new Date(a.createdAt).toLocaleString()}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      </div>
+    </div>
+  );
+}
