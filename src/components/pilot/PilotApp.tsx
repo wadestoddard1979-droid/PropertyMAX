@@ -1,10 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   createWorkOrder,
+  drainPilotJobs,
+  enqueuePilotJob,
   fetchMe,
   fetchNotifications,
+  fetchSystemStatus,
   fetchWorkOrders,
   login,
   logout,
@@ -25,14 +34,27 @@ import type {
 import { STATUS_LABELS } from "@/lib/types";
 import { Button, SectionLabel, StatusChip } from "@/components/ui";
 import OwnerFinancials from "@/components/pilot/OwnerFinancials";
+import PropertyRecords from "@/components/pilot/PropertyRecords";
+import DocumentsActivity from "@/components/pilot/DocumentsActivity";
+import MessagesPanel from "@/components/pilot/MessagesPanel";
 
 type Toast = string | null;
+type PilotView =
+  | "home"
+  | "new"
+  | "detail"
+  | "financials"
+  | "records"
+  | "documents"
+  | "messages";
 
 export default function PilotApp() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<SessionUser | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
   const [threshold, setThreshold] = useState(20000);
+  const [persistence, setPersistence] = useState("local-json");
+  const [authMode, setAuthMode] = useState("cookie-demo");
   const [pilotUsers, setPilotUsers] = useState<
     { email: string; name: string; role: string; passwordHint: string }[]
   >([]);
@@ -41,17 +63,25 @@ export default function PilotApp() {
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"home" | "new" | "detail" | "financials">(
-    "home",
+  const [messageWorkOrderId, setMessageWorkOrderId] = useState<string | null>(
+    null,
   );
+  const [view, setView] = useState<PilotView>("home");
   const [toast, setToast] = useState<Toast>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const me = await fetchMe();
+    const [me, sys] = await Promise.all([
+      fetchMe(),
+      fetchSystemStatus().catch(() => null),
+    ]);
     setUser(me.user);
     setProperty(me.property);
     setThreshold(me.policy?.ownerApprovalThresholdCents ?? 20000);
+    setPersistence(
+      sys?.persistenceLabel || me.policy?.persistence || "local-json",
+    );
+    setAuthMode(sys?.auth || me.policy?.auth || "cookie-demo");
     setPilotUsers(me.pilotUsers ?? []);
     if (!me.user) {
       setWorkOrders([]);
@@ -137,6 +167,8 @@ export default function PilotApp() {
       <LoginScreen
         pilotUsers={pilotUsers}
         threshold={threshold}
+        persistence={persistence}
+        authMode={authMode}
         error={error}
         onLogin={handleLogin}
       />
@@ -152,18 +184,25 @@ export default function PilotApp() {
               PropertMax
             </p>
             <p className="truncate text-xs text-white/55">
-              Phase 1 pilot · maintenance + owner financials · local JSON
+              Phase 2 foundation · {persistence} · {authMode}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {user.role === "owner" && (
-              <button
-                type="button"
-                className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
-                onClick={() => setView("financials")}
-              >
+            <NavChip onClick={() => setView("home")}>Home</NavChip>
+            <NavChip onClick={() => setView("records")}>Records</NavChip>
+            <NavChip onClick={() => setView("documents")}>Docs</NavChip>
+            <NavChip
+              onClick={() => {
+                setMessageWorkOrderId(null);
+                setView("messages");
+              }}
+            >
+              Messages
+            </NavChip>
+            {(user.role === "owner" || user.role === "manager") && (
+              <NavChip onClick={() => setView("financials")}>
                 Financials
-              </button>
+              </NavChip>
             )}
             <StatusChip tone="accent">
               {user.role} · {user.name}
@@ -210,12 +249,22 @@ export default function PilotApp() {
             notifications={notifications}
             activity={activity}
             threshold={threshold}
+            persistence={persistence}
+            authMode={authMode}
             onOpen={(id) => {
               setSelectedId(id);
               setView("detail");
             }}
             onNew={() => setView("new")}
             onFinancials={() => setView("financials")}
+            onRecords={() => setView("records")}
+            onDocuments={() => setView("documents")}
+            onMessages={() => {
+              setMessageWorkOrderId(null);
+              setView("messages");
+            }}
+            onToast={setToast}
+            onError={setError}
           />
         )}
 
@@ -227,6 +276,36 @@ export default function PilotApp() {
               setSelectedId(id);
               setView("detail");
             }}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "records" && (
+          <PropertyRecords
+            user={user}
+            onBack={() => setView("home")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "documents" && property && (
+          <DocumentsActivity
+            user={user}
+            propertyId={property.id}
+            onBack={() => setView("home")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "messages" && property && (
+          <MessagesPanel
+            user={user}
+            propertyId={property.id}
+            initialWorkOrderId={messageWorkOrderId}
+            onBack={() => setView("home")}
             onToast={setToast}
             onError={setError}
           />
@@ -257,6 +336,10 @@ export default function PilotApp() {
               setView("home");
               setSelectedId(null);
             }}
+            onOpenMessages={() => {
+              setMessageWorkOrderId(selected.id);
+              setView("messages");
+            }}
             onChanged={async (msg) => {
               await refresh();
               setToast(msg);
@@ -278,11 +361,15 @@ export default function PilotApp() {
 function LoginScreen({
   pilotUsers,
   threshold,
+  persistence,
+  authMode,
   error,
   onLogin,
 }: {
   pilotUsers: { email: string; name: string; role: string; passwordHint: string }[];
   threshold: number;
+  persistence: string;
+  authMode: string;
   error: string | null;
   onLogin: (email: string) => void;
 }) {
@@ -292,13 +379,13 @@ function LoginScreen({
         PropertMax
       </p>
       <p className="mt-2 max-w-xl text-[var(--muted)]">
-        Phase 1 pilot — maintenance workflow + owner cash flow / projections.
-        Password for all sample users: <strong>pilot</strong>. Owner approval
-        required over {moneyFromCents(threshold)}.
+        Phase 2 foundation — Supabase schema/auth/storage/queue with local-json
+        fallback. Password for all sample users: <strong>pilot</strong>. Owner
+        approval required over {moneyFromCents(threshold)}.
       </p>
       <p className="mt-2 text-xs text-[var(--muted)]">
-        Persistence: local JSON file (`data/propertmax-store.json`). TODO:
-        Supabase Auth + Postgres RLS.
+        Persistence: <strong>{persistence}</strong> · Auth: {authMode}. Without
+        Supabase env vars the app stays on local JSON so builds work offline.
       </p>
       {error && (
         <p className="mt-4 text-sm text-[var(--danger)]">{error}</p>
@@ -329,6 +416,24 @@ function LoginScreen({
   );
 }
 
+function NavChip({
+  children,
+  onClick,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function RoleHome({
   user,
   property,
@@ -336,9 +441,16 @@ function RoleHome({
   notifications,
   activity,
   threshold,
+  persistence,
+  authMode,
   onOpen,
   onNew,
   onFinancials,
+  onRecords,
+  onDocuments,
+  onMessages,
+  onToast,
+  onError,
 }: {
   user: SessionUser;
   property: Property | null;
@@ -346,9 +458,16 @@ function RoleHome({
   notifications: Notification[];
   activity: ActivityEvent[];
   threshold: number;
+  persistence: string;
+  authMode: string;
   onOpen: (id: string) => void;
   onNew: () => void;
   onFinancials: () => void;
+  onRecords: () => void;
+  onDocuments: () => void;
+  onMessages: () => void;
+  onToast: (msg: string) => void;
+  onError: (msg: string) => void;
 }) {
   const attention = workOrders.filter((w) => {
     if (user.role === "owner")
@@ -388,7 +507,16 @@ function RoleHome({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {user.role === "owner" && (
+          <Button variant="secondary" onClick={onRecords}>
+            Records
+          </Button>
+          <Button variant="secondary" onClick={onDocuments}>
+            Docs & activity
+          </Button>
+          <Button variant="secondary" onClick={onMessages}>
+            Messages
+          </Button>
+          {(user.role === "owner" || user.role === "manager") && (
             <Button onClick={onFinancials}>Open financials</Button>
           )}
           {(user.role === "tenant" || user.role === "manager") && (
@@ -396,6 +524,58 @@ function RoleHome({
           )}
         </div>
       </header>
+
+      <section className="panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <SectionLabel>Phase 2 foundation</SectionLabel>
+            <p className="mt-1 text-sm text-[var(--ink-soft)]">
+              Persistence <strong>{persistence}</strong> · Auth {authMode}
+            </p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Supabase Postgres + RLS + Storage + job queue when env is set;
+              otherwise local JSON demo mode (no secrets required).
+            </p>
+          </div>
+          <StatusChip
+            tone={persistence.includes("supabase") ? "positive" : "neutral"}
+          >
+            {persistence}
+          </StatusChip>
+        </div>
+        {user.role === "manager" && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await enqueuePilotJob("reminder.rent", {
+                    propertyId: property?.id,
+                  });
+                  onToast("Queued rent reminder job");
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : "Enqueue failed");
+                }
+              }}
+            >
+              Enqueue reminder job
+            </Button>
+            <Button
+              variant="soft"
+              onClick={async () => {
+                try {
+                  const res = await drainPilotJobs();
+                  onToast(`Processed ${res.processed} due job(s)`);
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : "Drain failed");
+                }
+              }}
+            >
+              Drain job queue
+            </Button>
+          </div>
+        )}
+      </section>
 
       {user.role === "owner" && property && (
         <button
@@ -436,12 +616,16 @@ function RoleHome({
               Creates a durable work order
             </p>
           </button>
-          <div className="panel px-4 py-4">
+          <button
+            type="button"
+            onClick={onMessages}
+            className="panel px-4 py-4 text-left transition hover:border-[var(--accent)]/40"
+          >
             <p className="display text-lg font-semibold">Message</p>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Use work-order thread for now
+              Property & work-order threads
             </p>
-          </div>
+          </button>
         </div>
       )}
 
@@ -655,6 +839,7 @@ function WorkOrderDetail({
   activity,
   threshold,
   onBack,
+  onOpenMessages,
   onChanged,
   onError,
 }: {
@@ -665,6 +850,7 @@ function WorkOrderDetail({
   activity: ActivityEvent[];
   threshold: number;
   onBack: () => void;
+  onOpenMessages: () => void;
   onChanged: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -707,13 +893,18 @@ function WorkOrderDetail({
             {workOrder.details}
           </p>
         </div>
-        <StatusChip
-          tone={
-            workOrder.status === "awaiting_owner_approval" ? "warn" : "accent"
-          }
-        >
-          {STATUS_LABELS[workOrder.status]}
-        </StatusChip>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={onOpenMessages}>
+            Open message thread
+          </Button>
+          <StatusChip
+            tone={
+              workOrder.status === "awaiting_owner_approval" ? "warn" : "accent"
+            }
+          >
+            {STATUS_LABELS[workOrder.status]}
+          </StatusChip>
+        </div>
       </header>
 
       <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">

@@ -39,6 +39,71 @@ export type Property = {
   ownerApprovalThresholdCents: number;
   monthlyRent: number;
   leaseEnd: string;
+  notes?: string;
+};
+
+export type Unit = {
+  id: string;
+  propertyId: string;
+  label: string;
+  beds: number;
+  baths: number;
+  sqft: number;
+  occupancy: "Occupied" | "Vacant";
+  monthlyRentCents: number;
+};
+
+export type Lease = {
+  id: string;
+  propertyId: string;
+  unitId: string;
+  tenantIds: string[];
+  startDate: string;
+  endDate: string;
+  monthlyRentCents: number;
+  depositCents: number;
+  status: "active" | "upcoming" | "ended";
+  notes: string;
+};
+
+export type DocumentRecord = {
+  id: string;
+  propertyId: string;
+  workOrderId: string | null;
+  leaseId: string | null;
+  title: string;
+  category:
+    | "lease"
+    | "insurance"
+    | "inspection"
+    | "invoice"
+    | "photo"
+    | "statement"
+    | "other";
+  fileName: string;
+  uploadedByUserId: string;
+  /** Roles allowed to see this document (manager always can). */
+  visibility: Role[];
+  note: string;
+  createdAt: string;
+};
+
+export type MessageThread = {
+  id: string;
+  propertyId: string;
+  workOrderId: string | null;
+  subject: string;
+  participantIds: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Message = {
+  id: string;
+  threadId: string;
+  authorUserId: string;
+  body: string;
+  createdAt: string;
 };
 
 export type Vendor = {
@@ -135,11 +200,16 @@ export type ProjectionAssumptions = {
 };
 
 export type AppStore = {
-  version: 2;
-  /** TODO(supabase): migrate this file store to Postgres + RLS. */
+  version: 3;
+  /** Domain snapshot — persisted to Supabase Postgres when configured, else local JSON. */
   seededAt: string;
   users: User[];
   properties: Property[];
+  units: Unit[];
+  leases: Lease[];
+  documents: DocumentRecord[];
+  messageThreads: MessageThread[];
+  messages: Message[];
   vendors: Vendor[];
   workOrders: WorkOrder[];
   activity: ActivityEvent[];
