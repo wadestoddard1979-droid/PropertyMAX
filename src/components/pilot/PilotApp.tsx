@@ -473,23 +473,35 @@ function LoginScreen({
   error,
   onLogin,
 }: {
-  pilotUsers: { email: string; name: string; role: string; passwordHint: string }[];
+  pilotUsers: {
+    email: string;
+    name: string;
+    role: string;
+    passwordHint: string;
+    orgIds?: string[];
+  }[];
   threshold: number;
   persistence: string;
   authMode: string;
   error: string | null;
   onLogin: (email: string) => void;
 }) {
+  const isBeachyUser = (u: { email: string; orgIds?: string[] }) =>
+    Boolean(u.orgIds?.includes("org-beachy")) ||
+    u.email.endsWith("@beachy.demo");
+  const propertyMaxUsers = pilotUsers.filter((u) => !isBeachyUser(u));
+  const beachyUsers = pilotUsers.filter(isBeachyUser);
+
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-5 py-12">
       <p className="display text-3xl font-semibold text-[var(--ink)] sm:text-4xl">
         PropertMax
       </p>
       <p className="mt-2 max-w-xl text-[var(--muted)]">
-        Phase 3 commercial — multi-org, SaaS demo billing, portfolios, white-label.
-        Local-json
-        fallback. Password for all sample users: <strong>pilot</strong>. Owner
-        approval required over {moneyFromCents(threshold)}.
+        Property management OS — Phase 3 commercial (multi-org, SaaS demo
+        billing, portfolios). Default look is <strong>PropertMax</strong>.
+        Password for all sample users: <strong>pilot</strong>. Owner approval
+        required over {moneyFromCents(threshold)}.
       </p>
       <p className="mt-2 text-xs text-[var(--muted)]">
         Persistence: <strong>{persistence}</strong> · Auth: {authMode}. Without
@@ -498,8 +510,11 @@ function LoginScreen({
       {error && (
         <p className="mt-4 text-sm text-[var(--danger)]">{error}</p>
       )}
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
-        {pilotUsers.map((u) => (
+      <div className="mt-8">
+        <SectionLabel>PropertMax pilot accounts</SectionLabel>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {propertyMaxUsers.map((u) => (
           <button
             key={u.email}
             type="button"
@@ -514,6 +529,35 @@ function LoginScreen({
           </button>
         ))}
       </div>
+      {beachyUsers.length > 0 && (
+        <>
+          <div className="mt-10">
+            <SectionLabel>
+              Beachy Renovations white-label (org-beachy only)
+            </SectionLabel>
+          </div>
+          <p className="mt-2 text-sm text-[var(--muted)]">
+            These accounts apply the Beachy theme after sign-in. They are not
+            the default product brand.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {beachyUsers.map((u) => (
+              <button
+                key={u.email}
+                type="button"
+                onClick={() => onLogin(u.email)}
+                className="panel px-4 py-4 text-left transition hover:border-[var(--accent)]/40"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                  {u.role} · white-label
+                </p>
+                <p className="display mt-1 text-lg font-semibold">{u.name}</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">{u.email}</p>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <p className="mt-8 text-sm text-[var(--muted)]">
         Prefer the clickable Sites prototype?{" "}
         <a className="font-semibold text-[var(--accent)]" href="/sites-demo">

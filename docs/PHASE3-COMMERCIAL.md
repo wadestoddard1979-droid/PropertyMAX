@@ -2,14 +2,17 @@
 
 Local-json demo works with **no secrets**. Password for all sample users: `pilot`.
 
+**Branding:** Login + `@propertmax.demo` = PropertMax. Beachy Renovations white-label only for `@beachy.demo` / `org-beachy`.
+
 ## Quick bar
 
 | Check | How |
 | --- | --- |
+| Default brand | Open `/` logged out — PropertMax login. Sign in `owner@propertmax.demo` — header stays PropertMax. |
 | Second org | Sign in as `owner@beachy.demo` (Beachy Renovations PM). Header shows Beachy white-label. |
 | Multi-property | Sign in as `owner@propertmax.demo` → **Commercial** → Portfolio. Pilot org has Maple + Ocean View. |
 | SaaS subscription | Commercial → SaaS billing → set pilot/growth/portfolio. Without Stripe keys you get **DEMO** invoices labeled “not a real charge”. |
-| White-label | Beachy org theme (logo/colors/tagline). Or Pilot org **Touch tagline** under Overview. |
+| White-label | Beachy org theme (logo/colors/tagline) only on Beachy accounts. Or Pilot org **Touch tagline** under Overview. |
 | Org switch | Commercial → Active org buttons (memberships only). |
 | MFA | Commercial → Security → Enable MFA → Verify with `123456`. Plan changes then require verification. |
 | Accounting stub | Commercial → Accounting → Import sample CSV; Export CSV. |

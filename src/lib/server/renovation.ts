@@ -457,7 +457,7 @@ export function seedMapleRenoBundle(store: AppStore) {
     spentCents: 420000,
     status: "in_progress",
     ownerDecision: "approved",
-    ownerNote: "Approved with Beachy Renovations preferred vendor set.",
+    ownerNote: "Approved with preferred vendor set.",
     managerUserId: "user-manager",
     vendorId: "vendor-beach-plumbing",
     milestones: [

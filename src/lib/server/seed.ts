@@ -347,7 +347,7 @@ export function createSeedStore(): AppStore {
         monthlyRent: 1850,
         leaseEnd: "Aug 31, 2027",
         notes:
-          "Pilot townhouse · Beachy Renovations turnover complete · single-unit record.",
+          "Pilot townhouse · PropertMax demo property · single-unit record.",
       },
     ],
     units: [mapleUnit()],

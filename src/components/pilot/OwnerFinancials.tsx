@@ -504,7 +504,7 @@ export default function OwnerFinancials({
             </p>
           </div>
           <p className="text-xs leading-relaxed text-[var(--muted)]">
-            Beachy Renovations pilot context: pre-lease refresh is modeled as a
+            PropertMax pilot context: pre-lease refresh is modeled as a
             one-time spend with optional rent uplift. This is a planning aid —
             not an appraisal, and not a promise of appreciation or resale gain.
           </p>

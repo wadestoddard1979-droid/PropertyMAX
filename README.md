@@ -1,6 +1,8 @@
-# PropertMax — Phase 2 foundation
+# PropertMax — Property management OS
 
-Property management OS pilot (Beachy Renovations townhouse). Phase 1 closeout features remain; this branch adds the **Supabase foundation** while keeping a zero-secret local demo mode.
+Default product brand is **PropertMax**. Beachy Renovations is a **white-label demo org** only — it appears after sign-in as `*@beachy.demo` (`org-beachy`), not on the login page or for `@propertmax.demo` users.
+
+Phase 1–3 pilot surfaces remain; local demo mode works with **no secrets** (Supabase optional).
 
 ## Stack
 
@@ -16,9 +18,19 @@ If an older clone still points at `PeopertyMAX`:
 git remote set-url origin https://github.com/wadestoddard1979-droid/PropertyMAX.git
 ```
 
+## Branding
+
+| Surface | Brand |
+|---------|--------|
+| Login page / logged-out | PropertMax |
+| `@propertmax.demo` · `org-pilot` | PropertMax theme |
+| `@beachy.demo` · `org-beachy` | Beachy Renovations white-label |
+
 ## Pilot logins
 
 Password for all: `pilot`
+
+**PropertMax (default)**
 
 | Role | Email |
 |------|--------|
@@ -26,6 +38,14 @@ Password for all: `pilot`
 | Manager | manager@propertmax.demo |
 | Tenant | tenant@propertmax.demo |
 | Contractor | contractor@propertmax.demo |
+
+**Beachy white-label (optional)**
+
+| Role | Email |
+|------|--------|
+| Owner | owner@beachy.demo |
+| Manager | manager@beachy.demo |
+| Tenant | tenant@beachy.demo |
 
 ## Run without Supabase (default)
 

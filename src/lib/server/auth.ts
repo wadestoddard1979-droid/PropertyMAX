@@ -47,10 +47,16 @@ async function sessionFromStoreUserId(
   const user = store.users.find((u) => u.id === id);
   if (!user) return null;
   const memberships = (store.memberships || []).filter((m) => m.userId === id);
+  // Prefer PropertMax (org-pilot) when no explicit org is requested — Beachy
+  // white-label only applies when the session org is org-beachy.
   const resolvedOrg =
     orgId && memberships.some((m) => m.orgId === orgId)
       ? orgId
-      : memberships[0]?.orgId || user.orgIds?.[0] || "org-pilot";
+      : memberships.find((m) => m.orgId === "org-pilot")?.orgId ||
+        memberships[0]?.orgId ||
+        user.orgIds?.find((o) => o === "org-pilot") ||
+        user.orgIds?.[0] ||
+        "org-pilot";
   const membership = memberships.find((m) => m.orgId === resolvedOrg);
   return {
     id: user.id,

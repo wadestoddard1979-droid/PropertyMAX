@@ -42,7 +42,12 @@ export function ensureCommercialDefaults(store: AppStore) {
     if (v.preferred === undefined) v.preferred = true;
   }
   for (const u of store.users || []) {
-    if (!u.orgIds) u.orgIds = ["org-pilot"];
+    if (!u.orgIds) {
+      // Beachy demo accounts stay on the white-label org; everyone else defaults to PropertMax.
+      u.orgIds = u.email?.endsWith("@beachy.demo")
+        ? ["org-beachy"]
+        : ["org-pilot"];
+    }
     if (u.mfaEnabled === undefined) u.mfaEnabled = false;
   }
 }
@@ -545,9 +550,23 @@ export function seedPhase3Commercial(store: AppStore) {
   ensureMembership("org-beachy", "user-beachy-manager", "manager");
   ensureMembership("org-beachy", "user-beachy-tenant", "tenant");
 
-  // Maple belongs to pilot
+  // Maple belongs to pilot (never Beachy-branded)
   const maple = store.properties.find((p) => p.id === "prop-maple");
-  if (maple) maple.orgId = "org-pilot";
+  if (maple) {
+    maple.orgId = "org-pilot";
+    if (maple.notes?.includes("Beachy Renovations")) {
+      maple.notes =
+        "Pilot townhouse · PropertMax demo property · single-unit record.";
+    }
+  }
+  const mapleReno = store.renovationProjects?.find(
+    (r) => r.id === "reno-maple-kitchen",
+  );
+  if (
+    mapleReno?.ownerNote?.includes("Beachy Renovations preferred vendor set")
+  ) {
+    mapleReno.ownerNote = "Approved with preferred vendor set.";
+  }
 
   // Second property in pilot + Beachy property
   if (!store.properties.some((p) => p.id === "prop-ocean")) {
@@ -776,19 +795,7 @@ export function seedPhase3Commercial(store: AppStore) {
     });
   }
 
-  // White-label Beachy
-  if (!store.whiteLabelThemes.some((t) => t.orgId === "org-beachy")) {
-    store.whiteLabelThemes.push({
-      orgId: "org-beachy",
-      brandName: "Beachy Renovations",
-      logoText: "Beachy Renovations",
-      tagline: "Coastal property ops · renovation-led PM",
-      primaryColor: "#0ea5e9",
-      accentColor: "#0369a1",
-      surfaceColor: "#e0f2fe",
-      mark: "BR",
-    });
-  }
+  // Default PropertMax theme first; Beachy is white-label only for org-beachy.
   if (!store.whiteLabelThemes.some((t) => t.orgId === "org-pilot")) {
     store.whiteLabelThemes.push({
       orgId: "org-pilot",
@@ -799,6 +806,18 @@ export function seedPhase3Commercial(store: AppStore) {
       accentColor: "#134e4a",
       surfaceColor: "#f0fdfa",
       mark: "PM",
+    });
+  }
+  if (!store.whiteLabelThemes.some((t) => t.orgId === "org-beachy")) {
+    store.whiteLabelThemes.push({
+      orgId: "org-beachy",
+      brandName: "Beachy Renovations",
+      logoText: "Beachy Renovations",
+      tagline: "Coastal property ops · renovation-led PM",
+      primaryColor: "#0ea5e9",
+      accentColor: "#0369a1",
+      surfaceColor: "#e0f2fe",
+      mark: "BR",
     });
   }
 
