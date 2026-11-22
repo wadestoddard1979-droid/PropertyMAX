@@ -11,6 +11,7 @@ import {
   persistStoreToSupabase,
 } from "./supabase/store";
 import { seedMapleRenoBundle } from "./renovation";
+import { seedPhase3Commercial } from "./commercial";
 import type { AppStore } from "../types";
 
 /**
@@ -43,6 +44,14 @@ function migrateStore(store: AppStore): AppStore {
   if (!store.renovationProjects) store.renovationProjects = [];
   if (!store.turnoverChecklists) store.turnoverChecklists = [];
   if (!store.assets) store.assets = [];
+  if (!store.organizations) store.organizations = [];
+  if (!store.memberships) store.memberships = [];
+  if (!store.saasSubscriptions) store.saasSubscriptions = [];
+  if (!store.saasInvoices) store.saasInvoices = [];
+  if (!store.whiteLabelThemes) store.whiteLabelThemes = [];
+  if (!store.accountingImports) store.accountingImports = [];
+  if (!store.auditLogs) store.auditLogs = [];
+  if (!store.monitoringEvents) store.monitoringEvents = [];
   for (const w of store.workOrders || []) {
     if (w.intakeAuditId === undefined) w.intakeAuditId = null;
     if (w.emergencyFlag === undefined) w.emergencyFlag = false;
@@ -102,7 +111,8 @@ function migrateStore(store: AppStore): AppStore {
   }
 
   seedMapleRenoBundle(store);
-  store.version = 7;
+  seedPhase3Commercial(store);
+  store.version = 8;
   return store;
 }
 

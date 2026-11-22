@@ -40,15 +40,25 @@ function decodeSession(token: string): SessionUser | null {
 
 async function sessionFromStoreUserId(
   id: string,
+  orgId?: string | null,
+  mfaVerified = false,
 ): Promise<SessionUser | null> {
   const store = await readStore();
   const user = store.users.find((u) => u.id === id);
   if (!user) return null;
+  const memberships = (store.memberships || []).filter((m) => m.userId === id);
+  const resolvedOrg =
+    orgId && memberships.some((m) => m.orgId === orgId)
+      ? orgId
+      : memberships[0]?.orgId || user.orgIds?.[0] || "org-pilot";
+  const membership = memberships.find((m) => m.orgId === resolvedOrg);
   return {
     id: user.id,
     email: user.email,
     name: user.name,
-    role: user.role,
+    role: membership?.role || user.role,
+    orgId: resolvedOrg,
+    mfaVerified,
   };
 }
 
@@ -103,7 +113,12 @@ export async function getSession(): Promise<SessionUser | null> {
   if (!raw) return null;
   const session = decodeSession(raw);
   if (!session) return null;
-  return sessionFromStoreUserId(session.id);
+  // Preserve org + MFA flags from cookie while refreshing role/name from store
+  return sessionFromStoreUserId(
+    session.id,
+    session.orgId,
+    Boolean(session.mfaVerified),
+  );
 }
 
 export async function requireSession(roles?: Role[]): Promise<SessionUser> {
@@ -152,6 +167,7 @@ export async function clearSessionCookie() {
 export async function loginWithPassword(
   email: string,
   password: string,
+  orgId?: string,
 ): Promise<{ user: SessionUser; via: "supabase" | "demo" }> {
   const normalized = email.trim().toLowerCase();
 
@@ -166,9 +182,10 @@ export async function loginWithPassword(
         await setSupabaseAccessCookie(data.session.access_token);
         const session = await getSupabaseSessionUser();
         if (session) {
-          // Also set demo cookie so server helpers that only check HMAC still work
-          await setSessionCookie(session);
-          return { user: session, via: "supabase" };
+          const enriched =
+            (await sessionFromStoreUserId(session.id, orgId, false)) || session;
+          await setSessionCookie(enriched);
+          return { user: enriched, via: "supabase" };
         }
       }
     } catch (err) {
@@ -188,14 +205,37 @@ export async function loginWithPassword(
   if (!user) {
     throw new AuthError("Invalid credentials", 401);
   }
-  const session = {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  };
+  const session = await sessionFromStoreUserId(user.id, orgId, false);
+  if (!session) throw new AuthError("Invalid credentials", 401);
   await setSessionCookie(session);
   return { user: session, via: "demo" };
+}
+
+/** Demo MFA — code 123456 marks session verified for sensitive actions. */
+export async function verifyMfaDemo(code: string): Promise<SessionUser> {
+  const session = await getSession();
+  if (!session) throw new AuthError("Not authenticated", 401);
+  if (code.trim() !== "123456") {
+    throw new AuthError("Invalid MFA code (demo code is 123456)", 400);
+  }
+  const next = { ...session, mfaVerified: true };
+  await setSessionCookie(next);
+  return next;
+}
+
+export async function switchOrg(orgId: string): Promise<SessionUser> {
+  const session = await getSession();
+  if (!session) throw new AuthError("Not authenticated", 401);
+  const next = await sessionFromStoreUserId(
+    session.id,
+    orgId,
+    Boolean(session.mfaVerified),
+  );
+  if (!next || next.orgId !== orgId) {
+    throw new AuthError("Not a member of that organization", 403);
+  }
+  await setSessionCookie(next);
+  return next;
 }
 
 export class AuthError extends Error {

@@ -298,7 +298,7 @@ export function createSeedStore(): AppStore {
   const now = new Date().toISOString();
   const { threads, messages } = mapleMessages(now);
   return {
-    version: 7,
+    version: 8,
     seededAt: now,
     users: [
       {
@@ -476,5 +476,13 @@ export function createSeedStore(): AppStore {
     renovationProjects: [],
     turnoverChecklists: [],
     assets: [],
+    organizations: [],
+    memberships: [],
+    saasSubscriptions: [],
+    saasInvoices: [],
+    whiteLabelThemes: [],
+    accountingImports: [],
+    auditLogs: [],
+    monitoringEvents: [],
   };
 }

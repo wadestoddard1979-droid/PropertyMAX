@@ -21,10 +21,117 @@ export type User = {
   role: Role;
   /** Pilot demo password — replace with hashed auth via Supabase Auth. */
   password: string;
+  /** Orgs this user belongs to (Phase 3). */
+  orgIds?: string[];
+  /** MFA enabled for sensitive roles (owner/manager). */
+  mfaEnabled?: boolean;
+};
+
+export type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  /** Owner of the SaaS seat / billing contact. */
+  billingUserId: string;
+  createdAt: string;
+};
+
+export type Membership = {
+  id: string;
+  orgId: string;
+  userId: string;
+  role: Role;
+  createdAt: string;
+};
+
+export type SaasPlan = "pilot" | "growth" | "portfolio";
+
+export type SaasSubscription = {
+  id: string;
+  orgId: string;
+  plan: SaasPlan;
+  status: "trialing" | "active" | "past_due" | "canceled";
+  provider: "stripe" | "demo";
+  externalId: string | null;
+  seats: number;
+  unitAmountCents: number;
+  currentPeriodEnd: string;
+  updatedAt: string;
+};
+
+export type SaasInvoice = {
+  id: string;
+  orgId: string;
+  subscriptionId: string;
+  amountCents: number;
+  status: "paid" | "open" | "void" | "demo";
+  label: string;
+  issuedAt: string;
+  /** Demo invoices are clearly labeled fake — never real charges. */
+  demo: boolean;
+};
+
+export type WhiteLabelTheme = {
+  orgId: string;
+  brandName: string;
+  logoText: string;
+  tagline: string;
+  primaryColor: string;
+  accentColor: string;
+  surfaceColor: string;
+  /** Optional logo mark (emoji/initial — no binary assets required). */
+  mark: string;
+};
+
+export type AccountingImportLine = {
+  id: string;
+  orgId: string;
+  propertyId: string | null;
+  externalRef: string;
+  label: string;
+  amountCents: number;
+  postedOn: string;
+  matchedLedgerId: string | null;
+  status: "imported" | "matched" | "unmatched" | "ignored";
+};
+
+export type AuditLogEntry = {
+  id: string;
+  orgId: string | null;
+  actorUserId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  detail: string;
+  createdAt: string;
+};
+
+export type MonitoringEvent = {
+  id: string;
+  level: "info" | "warn" | "error";
+  source: string;
+  message: string;
+  createdAt: string;
+};
+
+export type BenchmarkSnapshot = {
+  orgId: string;
+  generatedAt: string;
+  metrics: {
+    avgRentCents: number;
+    avgCashFlowCents: number;
+    occupancyPct: number;
+    maintenancePerDoorCents: number;
+    peerAvgRentCents: number;
+    peerOccupancyPct: number;
+    peerMaintenancePerDoorCents: number;
+  };
+  notes: string;
 };
 
 export type Property = {
   id: string;
+  orgId?: string;
   name: string;
   address: string;
   type: string;
@@ -111,6 +218,11 @@ export type Vendor = {
   name: string;
   trade: string;
   contractorUserId: string;
+  /** Owning org for preferred network (Phase 3). Null = legacy global. */
+  orgId?: string | null;
+  preferred?: boolean;
+  serviceArea?: string;
+  rating?: number;
 };
 
 /** Per-property spending / automation policy (Phase 2). */
@@ -427,10 +539,12 @@ export type AssetRecord = {
 };
 
 export type AppStore = {
-  version: 7;
+  version: 8;
   /** Domain snapshot — persisted to Supabase Postgres when configured, else local JSON. */
   seededAt: string;
   users: User[];
+  organizations: Organization[];
+  memberships: Membership[];
   properties: Property[];
   units: Unit[];
   leases: Lease[];
@@ -452,6 +566,12 @@ export type AppStore = {
   renovationProjects: RenovationProject[];
   turnoverChecklists: TurnoverChecklist[];
   assets: AssetRecord[];
+  saasSubscriptions: SaasSubscription[];
+  saasInvoices: SaasInvoice[];
+  whiteLabelThemes: WhiteLabelTheme[];
+  accountingImports: AccountingImportLine[];
+  auditLogs: AuditLogEntry[];
+  monitoringEvents: MonitoringEvent[];
 };
 
 export type SessionUser = {
@@ -459,6 +579,8 @@ export type SessionUser = {
   email: string;
   name: string;
   role: Role;
+  orgId?: string | null;
+  mfaVerified?: boolean;
 };
 
 export const STATUS_LABELS: Record<WorkOrderStatus, string> = {

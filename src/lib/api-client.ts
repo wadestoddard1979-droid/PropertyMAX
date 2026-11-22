@@ -46,8 +46,20 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function fetchMe() {
   return api<{
-    user: SessionUser | null;
+    user: (SessionUser & { mfaEnabled?: boolean }) | null;
     property: Property | null;
+    properties?: Property[];
+    orgs?: { id: string; name: string; slug: string }[];
+    theme?: {
+      orgId: string;
+      brandName: string;
+      logoText: string;
+      tagline: string;
+      primaryColor: string;
+      accentColor: string;
+      surfaceColor: string;
+      mark: string;
+    } | null;
     policy: {
       ownerApprovalThresholdCents: number;
       persistence: string;
@@ -60,6 +72,7 @@ export function fetchMe() {
       name: string;
       role: string;
       passwordHint: string;
+      orgIds?: string[];
     }[];
   }>("/api/auth/me");
 }
@@ -579,5 +592,140 @@ export function patchTurnoverItem(
       checklistId,
       items,
     }),
+  });
+}
+
+export function fetchCommercial(orgId: string) {
+  return api<{
+    org: { id: string; name: string; slug: string } | null;
+    orgs: { id: string; name: string; slug: string }[];
+    memberships: {
+      id: string;
+      userId: string;
+      role: string;
+      userName: string;
+      userEmail: string;
+    }[];
+    properties: Property[];
+    subscription: {
+      id: string;
+      plan: string;
+      status: string;
+      provider: string;
+      unitAmountCents: number;
+      currentPeriodEnd: string;
+    } | null;
+    invoices: {
+      id: string;
+      amountCents: number;
+      status: string;
+      label: string;
+      demo: boolean;
+      issuedAt: string;
+    }[];
+    theme: {
+      orgId: string;
+      brandName: string;
+      logoText: string;
+      tagline: string;
+      primaryColor: string;
+      accentColor: string;
+      surfaceColor: string;
+      mark: string;
+    } | null;
+    vendors: Vendor[];
+    portfolio: {
+      propertyCount: number;
+      occupiedCount: number;
+      totals: {
+        rent: number;
+        noi: number;
+        cashFlow: number;
+        renovationSpend: number;
+      };
+      perProperty: {
+        propertyId: string;
+        name: string;
+        occupancy: string;
+        monthlyRentCents: number;
+      }[];
+    };
+    benchmark: {
+      metrics: {
+        avgRentCents: number;
+        avgCashFlowCents: number;
+        occupancyPct: number;
+        maintenancePerDoorCents: number;
+        peerAvgRentCents: number;
+        peerOccupancyPct: number;
+        peerMaintenancePerDoorCents: number;
+      };
+      notes: string;
+    };
+    accounting: {
+      id: string;
+      externalRef: string;
+      label: string;
+      amountCents: number;
+      status: string;
+      matchedLedgerId: string | null;
+    }[];
+    monitoring: {
+      id: string;
+      level: string;
+      source: string;
+      message: string;
+      createdAt: string;
+    }[];
+    billingMode: string;
+    session: { orgId?: string | null; mfaVerified: boolean };
+  }>(`/api/commercial?orgId=${encodeURIComponent(orgId)}`);
+}
+
+export function switchActiveOrg(orgId: string) {
+  return api<{ user: SessionUser }>("/api/auth/org", {
+    method: "POST",
+    body: JSON.stringify({ orgId }),
+  });
+}
+
+export function verifyMfa(code: string) {
+  return api<{ user: SessionUser; ok: boolean }>("/api/auth/mfa", {
+    method: "POST",
+    body: JSON.stringify({ action: "verify", code }),
+  });
+}
+
+export function toggleMfa(enabled: boolean) {
+  return api<{ mfaEnabled: boolean }>("/api/auth/mfa", {
+    method: "POST",
+    body: JSON.stringify({ action: "toggle", enabled }),
+  });
+}
+
+export function updateSaasPlan(orgId: string, plan: string) {
+  return api<{
+    subscription: { plan: string; provider: string };
+    invoice: { label: string; demo: boolean; amountCents: number };
+  }>("/api/commercial", {
+    method: "POST",
+    body: JSON.stringify({ action: "subscribe", orgId, plan }),
+  });
+}
+
+export function saveWhiteLabel(
+  orgId: string,
+  theme: Record<string, string>,
+) {
+  return api<{ theme: Record<string, string> }>("/api/commercial", {
+    method: "POST",
+    body: JSON.stringify({ action: "theme", orgId, theme }),
+  });
+}
+
+export function importAccountingCsv(orgId: string, csv: string) {
+  return api<{ lines: { id: string; status: string }[] }>("/api/commercial", {
+    method: "POST",
+    body: JSON.stringify({ action: "accounting_import", orgId, csv }),
   });
 }

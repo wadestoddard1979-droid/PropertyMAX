@@ -5,6 +5,7 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => null)) as {
       email?: string;
       password?: string;
+      orgId?: string;
     } | null;
     if (!body?.email || !body?.password) {
       return Response.json(
@@ -12,7 +13,11 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const result = await loginWithPassword(body.email, body.password);
+    const result = await loginWithPassword(
+      body.email,
+      body.password,
+      body.orgId,
+    );
     return Response.json({
       user: result.user,
       authVia: result.via,

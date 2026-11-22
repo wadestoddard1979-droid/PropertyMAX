@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import {
@@ -41,6 +42,7 @@ import MaintenanceIntake from "@/components/pilot/MaintenanceIntake";
 import PolicyVendors from "@/components/pilot/PolicyVendors";
 import TenantPayments from "@/components/pilot/TenantPayments";
 import OwnerReportsReno from "@/components/pilot/OwnerReportsReno";
+import CommercialPlatform from "@/components/pilot/CommercialPlatform";
 
 type Toast = string | null;
 type PilotView =
@@ -53,17 +55,37 @@ type PilotView =
   | "messages"
   | "policies"
   | "payments"
-  | "reports";
+  | "reports"
+  | "commercial";
+
+type ThemeState = {
+  orgId: string;
+  brandName: string;
+  logoText: string;
+  tagline: string;
+  primaryColor: string;
+  accentColor: string;
+  surfaceColor: string;
+  mark: string;
+} | null;
 
 export default function PilotApp() {
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const [user, setUser] = useState<(SessionUser & { mfaEnabled?: boolean }) | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [theme, setTheme] = useState<ThemeState>(null);
   const [threshold, setThreshold] = useState(20000);
   const [persistence, setPersistence] = useState("local-json");
   const [authMode, setAuthMode] = useState("cookie-demo");
   const [pilotUsers, setPilotUsers] = useState<
-    { email: string; name: string; role: string; passwordHint: string }[]
+    {
+      email: string;
+      name: string;
+      role: string;
+      passwordHint: string;
+      orgIds?: string[];
+    }[]
   >([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -84,6 +106,8 @@ export default function PilotApp() {
     ]);
     setUser(me.user);
     setProperty(me.property);
+    setProperties(me.properties || (me.property ? [me.property] : []));
+    setTheme(me.theme || null);
     setThreshold(me.policy?.ownerApprovalThresholdCents ?? 20000);
     setPersistence(
       sys?.persistenceLabel || me.policy?.persistence || "local-json",
@@ -182,16 +206,26 @@ export default function PilotApp() {
     );
   }
 
+  const brandStyle = theme
+    ? ({
+        ["--accent" as string]: theme.primaryColor,
+        ["--accent-deep" as string]: theme.accentColor,
+        ["--accent-soft" as string]: theme.surfaceColor,
+        ["--demo-banner" as string]: theme.accentColor,
+      } as CSSProperties)
+    : undefined;
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={brandStyle}>
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[var(--demo-banner)] text-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           <div className="min-w-0">
             <p className="display text-sm font-semibold tracking-tight">
-              PropertMax
+              {theme?.logoText || "PropertMax"}
             </p>
             <p className="truncate text-xs text-white/55">
-              Phase 2 · policies · {persistence}
+              Phase 3 · {theme?.brandName || "commercial"} · {persistence}
+              {user.orgId ? ` · ${user.orgId}` : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -220,6 +254,11 @@ export default function PilotApp() {
             {(user.role === "owner" || user.role === "manager") && (
               <NavChip onClick={() => setView("reports")}>
                 Reports / Reno
+              </NavChip>
+            )}
+            {(user.role === "owner" || user.role === "manager") && (
+              <NavChip onClick={() => setView("commercial")}>
+                Commercial
               </NavChip>
             )}
             <StatusChip tone="accent">
@@ -284,10 +323,25 @@ export default function PilotApp() {
             onPolicies={() => setView("policies")}
             onPayments={() => setView("payments")}
             onReports={() => setView("reports")}
+            onCommercial={() => setView("commercial")}
             onToast={setToast}
             onError={setError}
           />
         )}
+
+        {view === "commercial" &&
+          (user.role === "owner" || user.role === "manager") && (
+            <CommercialPlatform
+              user={user}
+              orgId={user.orgId || "org-pilot"}
+              onBack={() => setView("home")}
+              onToast={setToast}
+              onError={setError}
+              onOrgChanged={() => {
+                void refresh();
+              }}
+            />
+          )}
 
         {view === "reports" &&
           property &&
@@ -432,7 +486,8 @@ function LoginScreen({
         PropertMax
       </p>
       <p className="mt-2 max-w-xl text-[var(--muted)]">
-        Phase 2 foundation — Supabase schema/auth/storage/queue with local-json
+        Phase 3 commercial — multi-org, SaaS demo billing, portfolios, white-label.
+        Local-json
         fallback. Password for all sample users: <strong>pilot</strong>. Owner
         approval required over {moneyFromCents(threshold)}.
       </p>
@@ -505,6 +560,7 @@ function RoleHome({
   onPolicies,
   onPayments,
   onReports,
+  onCommercial,
   onToast,
   onError,
 }: {
@@ -525,6 +581,7 @@ function RoleHome({
   onPolicies: () => void;
   onPayments: () => void;
   onReports: () => void;
+  onCommercial: () => void;
   onToast: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -591,6 +648,11 @@ function RoleHome({
           {(user.role === "owner" || user.role === "manager") && (
             <Button variant="secondary" onClick={onReports}>
               Reports / reno
+            </Button>
+          )}
+          {(user.role === "owner" || user.role === "manager") && (
+            <Button variant="secondary" onClick={onCommercial}>
+              Commercial platform
             </Button>
           )}
           {(user.role === "tenant" || user.role === "manager") && (
