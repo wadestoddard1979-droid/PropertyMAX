@@ -49,6 +49,8 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     activity,
     intakeAudits,
     automationPoliciesRes,
+    paymentRefsRes,
+    autopayRes,
   ] = await Promise.all([
     sb.from("profiles").select("*"),
     sb.from("properties").select("*"),
@@ -68,6 +70,8 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     sb.from("activity_events").select("*"),
     sb.from("intake_audits").select("*"),
     sb.from("automation_policies").select("*"),
+    sb.from("payment_refs").select("*"),
+    sb.from("autopay_enrollments").select("*"),
   ]);
 
   const errors = [
@@ -241,8 +245,11 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     ? []
     : automationPoliciesRes.data || [];
 
+  const payRows = paymentRefsRes.error ? [] : paymentRefsRes.data || [];
+  const autopayRows = autopayRes.error ? [] : autopayRes.data || [];
+
   return {
-    version: 5,
+    version: 6,
     seededAt: new Date().toISOString(),
     users,
     properties: props,
@@ -325,6 +332,47 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
       maxWaitHours: p.max_wait_hours ?? 48,
       enabled: p.enabled !== false,
     })),
+    paymentRefs: payRows.map((p) => {
+      const meta = (p.metadata || {}) as Record<string, unknown>;
+      return {
+        id: p.id,
+        propertyId: p.property_id,
+        leaseId: p.lease_id,
+        tenantUserId:
+          p.tenant_user_id ||
+          (typeof meta.tenantUserId === "string" ? meta.tenantUserId : ""),
+        provider: (p.provider === "stripe" ? "stripe" : "demo") as
+          | "stripe"
+          | "demo",
+        externalId: p.external_id,
+        amountCents: p.amount_cents,
+        status: p.status,
+        month:
+          p.month ||
+          (typeof meta.month === "string" ? meta.month : "") ||
+          "",
+        label:
+          p.label ||
+          (typeof meta.label === "string" ? meta.label : "Rent") ||
+          "Rent",
+        metadata: meta,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at || p.created_at,
+      };
+    }),
+    autopayEnrollments: autopayRows.map((a) => ({
+      id: a.id,
+      propertyId: a.property_id,
+      tenantUserId: a.tenant_user_id,
+      enabled: Boolean(a.enabled),
+      provider: (a.provider === "stripe" ? "stripe" : "demo") as
+        | "stripe"
+        | "demo",
+      dayOfMonth: a.day_of_month ?? 1,
+      createdAt: a.created_at,
+      updatedAt: a.updated_at,
+    })),
+    verifiedFaqs: [],
   };
 }
 
@@ -341,6 +389,7 @@ async function clearPilotTables() {
     () => sb.from("documents").delete().neq("id", ""),
     () => sb.from("ledger_entries").delete().neq("id", ""),
     () => sb.from("payment_refs").delete().neq("id", ""),
+    () => sb.from("autopay_enrollments").delete().neq("id", ""),
     () => sb.from("projection_assumptions").delete().neq("property_id", ""),
     () => sb.from("automation_policies").delete().neq("id", ""),
     () => sb.from("work_orders").delete().neq("id", ""),
@@ -686,6 +735,48 @@ export async function persistStoreToSupabase(store: AppStore): Promise<void> {
       })),
     );
     if (error) throw error;
+  }
+
+  if (store.paymentRefs?.length) {
+    const { error } = await sb.from("payment_refs").upsert(
+      store.paymentRefs.map((p) => ({
+        id: p.id,
+        property_id: p.propertyId,
+        lease_id: p.leaseId,
+        tenant_user_id: p.tenantUserId || null,
+        provider: p.provider,
+        external_id: p.externalId,
+        amount_cents: p.amountCents,
+        status: p.status,
+        month: p.month,
+        label: p.label,
+        metadata: {
+          ...p.metadata,
+          tenantUserId: p.tenantUserId,
+          month: p.month,
+          label: p.label,
+        },
+        created_at: p.createdAt,
+        updated_at: p.updatedAt,
+      })),
+    );
+    if (error) console.warn("payment_refs upsert:", error.message);
+  }
+
+  if (store.autopayEnrollments?.length) {
+    const { error } = await sb.from("autopay_enrollments").upsert(
+      store.autopayEnrollments.map((a) => ({
+        id: a.id,
+        property_id: a.propertyId,
+        tenant_user_id: a.tenantUserId,
+        enabled: a.enabled,
+        provider: a.provider,
+        day_of_month: a.dayOfMonth,
+        created_at: a.createdAt,
+        updated_at: a.updatedAt,
+      })),
+    );
+    if (error) console.warn("autopay_enrollments upsert:", error.message);
   }
 
   await sb.from("audit_logs").insert({

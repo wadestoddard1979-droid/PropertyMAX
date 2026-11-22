@@ -275,8 +275,45 @@ export type ProjectionAssumptions = {
   vacancyMonthsOnTurnover: number;
 };
 
+/** Hosted-pay / webhook payment reference — never stores card data. */
+export type PaymentRef = {
+  id: string;
+  propertyId: string;
+  leaseId: string | null;
+  tenantUserId: string;
+  provider: "stripe" | "demo";
+  externalId: string | null;
+  amountCents: number;
+  status: "planned" | "checkout_open" | "paid" | "failed" | "canceled";
+  month: string;
+  label: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AutopayEnrollment = {
+  id: string;
+  propertyId: string;
+  tenantUserId: string;
+  enabled: boolean;
+  /** Stub only — no real Stripe subscription/mandate stored in pilot. */
+  provider: "stripe" | "demo";
+  dayOfMonth: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type VerifiedFaq = {
+  id: string;
+  question: string;
+  answer: string;
+  tags: string[];
+  sourceDocId: string | null;
+};
+
 export type AppStore = {
-  version: 5;
+  version: 6;
   /** Domain snapshot — persisted to Supabase Postgres when configured, else local JSON. */
   seededAt: string;
   users: User[];
@@ -294,6 +331,9 @@ export type AppStore = {
   projectionAssumptions: ProjectionAssumptions[];
   intakeAudits: IntakeAudit[];
   automationPolicies: AutomationPolicy[];
+  paymentRefs: PaymentRef[];
+  autopayEnrollments: AutopayEnrollment[];
+  verifiedFaqs: VerifiedFaq[];
 };
 
 export type SessionUser = {

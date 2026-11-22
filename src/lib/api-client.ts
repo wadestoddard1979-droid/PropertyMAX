@@ -1,5 +1,6 @@
 import type {
   ActivityEvent,
+  AutopayEnrollment,
   AutomationPolicy,
   DocumentRecord,
   IntakeAnswers,
@@ -10,6 +11,7 @@ import type {
   Message,
   MessageThread,
   Notification,
+  PaymentRef,
   ProjectionAssumptions,
   Property,
   Role,
@@ -17,6 +19,7 @@ import type {
   Unit,
   Urgency,
   Vendor,
+  VerifiedFaq,
   WorkOrder,
 } from "./types";
 
@@ -381,4 +384,69 @@ export function patchPolicy(
     method: "PATCH",
     body: JSON.stringify({ propertyId, patch }),
   });
+}
+
+export function fetchPayments() {
+  return api<{
+    payments: PaymentRef[];
+    autopay: AutopayEnrollment[];
+    mode: "demo" | "stripe";
+    stripeConfigured: boolean;
+  }>("/api/payments");
+}
+
+export function startRentCheckout(input: {
+  propertyId: string;
+  month: string;
+  amountCents: number;
+  origin?: string;
+}) {
+  return api<{
+    mode: "demo" | "stripe";
+    paymentId: string;
+    url: string | null;
+    sessionId?: string;
+    label?: string;
+  }>("/api/payments", {
+    method: "POST",
+    body: JSON.stringify({ action: "checkout", ...input }),
+  });
+}
+
+export function completeDemoCheckout(paymentId: string) {
+  return api<{
+    payment: PaymentRef;
+    mode: string;
+    label: string;
+  }>("/api/payments", {
+    method: "POST",
+    body: JSON.stringify({ action: "demo_complete", paymentId }),
+  });
+}
+
+export function setAutopayEnrollment(input: {
+  propertyId: string;
+  enabled: boolean;
+  dayOfMonth?: number;
+}) {
+  return api<{ enrollment: AutopayEnrollment; note: string }>("/api/payments", {
+    method: "POST",
+    body: JSON.stringify({ action: "autopay", ...input }),
+  });
+}
+
+export function askFaq(text: string) {
+  return api<{
+    kind: "faq" | "escalated" | "unmatched";
+    faq: VerifiedFaq | null;
+    reply: string;
+    reasons: string[];
+  }>("/api/comms/faq", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function fetchVerifiedFaqs() {
+  return api<{ faqs: VerifiedFaq[] }>("/api/comms/faq");
 }

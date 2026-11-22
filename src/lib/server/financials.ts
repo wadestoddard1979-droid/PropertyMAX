@@ -47,7 +47,7 @@ export function ensureFinancialDefaults(store: AppStore) {
       store.projectionAssumptions.push(defaultAssumptions(p.id));
     }
   }
-  store.version = 5;
+  store.version = 6;
 }
 
 export function getAssumptions(

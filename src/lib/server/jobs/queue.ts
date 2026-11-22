@@ -9,6 +9,8 @@ export type JobKind =
   | "reminder.lease_expiry"
   | "approval.escalation"
   | "webhook.payment"
+  | "comms.request_ack"
+  | "comms.status_update"
   | "notify.digest"
   | "document.scan";
 
@@ -38,6 +40,16 @@ export type JobHandler = (job: JobRecord) => Promise<void>;
  */
 const LOCAL_PATH = path.join(process.cwd(), "data", "job-queue.json");
 const handlers = new Map<string, JobHandler>();
+let handlersBootstrapped = false;
+
+async function ensureHandlers() {
+  if (handlersBootstrapped) return;
+  handlersBootstrapped = true;
+  const [{ registerCommsHandlers }, { registerPaymentJobHandlers }] =
+    await Promise.all([import("../comms"), import("../payments-jobs")]);
+  registerCommsHandlers();
+  registerPaymentJobHandlers();
+}
 
 async function readLocal(): Promise<JobRecord[]> {
   try {
@@ -62,6 +74,7 @@ export async function enqueueJob(
   payload: Record<string, unknown> = {},
   opts?: { runAfter?: Date },
 ): Promise<JobRecord> {
+  await ensureHandlers();
   const now = new Date().toISOString();
   const job: JobRecord = {
     id: `job-${randomUUID().slice(0, 8)}`,
@@ -124,6 +137,7 @@ export async function listJobs(limit = 50): Promise<JobRecord[]> {
 }
 
 export async function processDueJobs(max = 10): Promise<number> {
+  await ensureHandlers();
   const now = new Date().toISOString();
   let processed = 0;
 
@@ -206,17 +220,3 @@ async function runOne(
   }
   await save(job);
 }
-
-// Built-in handlers for foundation smoke tests
-registerJobHandler("reminder.rent", async (job) => {
-  console.info("[job-queue] rent reminder", job.payload);
-});
-registerJobHandler("webhook.payment", async (job) => {
-  console.info("[job-queue] payment webhook placeholder", job.payload);
-});
-registerJobHandler("approval.escalation", async (job) => {
-  console.info(
-    "[job-queue] approval escalation timer fired",
-    job.payload,
-  );
-});

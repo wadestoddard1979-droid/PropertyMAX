@@ -1,4 +1,5 @@
 import type {
+  VerifiedFaq,
   AppStore,
   DocumentRecord,
   LedgerEntry,
@@ -9,6 +10,41 @@ import type {
   Unit,
 } from "../types";
 import { defaultPolicyForProperty } from "./policies";
+
+export const DEFAULT_VERIFIED_FAQS: VerifiedFaq[] = [
+  {
+    id: "faq-rent-due",
+    question: "When is rent due?",
+    answer:
+      "Rent is due on the 1st of each month. You can pay from the Payments page via hosted checkout. Late fees follow your lease.",
+    tags: ["rent", "due", "payment"],
+    sourceDocId: "doc-lease-pdf",
+  },
+  {
+    id: "faq-maintenance",
+    question: "How do I report a repair?",
+    answer:
+      "Use Request Repair for guided intake. Emergencies (flooding, gas, electrical hazard) are flagged for immediate manager review.",
+    tags: ["repair", "maintenance", "work order"],
+    sourceDocId: null,
+  },
+  {
+    id: "faq-trash",
+    question: "What are trash and recycling days?",
+    answer:
+      "For 847 Maple Lane, trash is collected Tuesday mornings; recycling every other Thursday. Place bins curbside by 7am.",
+    tags: ["trash", "recycling", "bins"],
+    sourceDocId: null,
+  },
+  {
+    id: "faq-parking",
+    question: "Where can I park?",
+    answer:
+      "One assigned driveway space is included. Street parking follows HOA rules — no commercial vehicles overnight.",
+    tags: ["parking", "hoa"],
+    sourceDocId: "doc-lease-pdf",
+  },
+];
 
 export function defaultAssumptions(propertyId: string): ProjectionAssumptions {
   return {
@@ -262,7 +298,7 @@ export function createSeedStore(): AppStore {
   const now = new Date().toISOString();
   const { threads, messages } = mapleMessages(now);
   return {
-    version: 5,
+    version: 6,
     seededAt: now,
     users: [
       {
@@ -346,6 +382,11 @@ export function createSeedStore(): AppStore {
         ownerDecision: "pending",
         ownerNote: null,
         requiresOwnerApproval: true,
+        intakeAuditId: null,
+        emergencyFlag: false,
+        policyDecisionReason: "over_threshold",
+        quoteRequestedAt: null,
+        escalationDueAt: "2026-11-19T14:20:00.000Z",
         createdAt: "2026-11-16T18:41:00.000Z",
         updatedAt: "2026-11-17T14:20:00.000Z",
       },
@@ -428,5 +469,8 @@ export function createSeedStore(): AppStore {
         escalationContactUserId: "user-manager",
       }),
     ],
+    paymentRefs: [],
+    autopayEnrollments: [],
+    verifiedFaqs: [...DEFAULT_VERIFIED_FAQS],
   };
 }

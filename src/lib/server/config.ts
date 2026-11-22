@@ -30,8 +30,23 @@ export function allowDemoLogin(): boolean {
   return true;
 }
 
+export function getStripeEnv() {
+  const secretKey = process.env.STRIPE_SECRET_KEY?.trim() || "";
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim() || "";
+  const publishableKey =
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim() || "";
+  return { secretKey, webhookSecret, publishableKey };
+}
+
+/** Live Stripe Checkout only when secret + publishable keys are set. */
+export function isStripeConfigured(): boolean {
+  const { secretKey, publishableKey } = getStripeEnv();
+  return Boolean(secretKey && publishableKey);
+}
+
 export function systemStatus() {
   const mode = getPersistenceMode();
+  const stripe = isStripeConfigured();
   return {
     persistence: mode,
     supabaseConfigured: isSupabaseConfigured(),
@@ -44,6 +59,10 @@ export function systemStatus() {
       mode === "supabase" ? "db-backed (job_queue)" : "in-process + local JSON",
     documentStorage:
       mode === "supabase" ? "supabase-storage:documents" : "metadata-only",
+    payments: stripe
+      ? "stripe-checkout"
+      : "demo-checkout (no STRIPE_* keys — simulates success, clearly labeled)",
+    stripeConfigured: stripe,
     productionQueueNote:
       "Production choice: keep DB-backed job_queue for pilot volume, or swap the JobQueue adapter to Inngest / Cloud Tasks / SQS without changing call sites.",
   };

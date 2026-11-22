@@ -1,7 +1,11 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { getPersistenceMode } from "./config";
-import { createSeedStore, defaultAssumptions } from "./seed";
+import {
+  createSeedStore,
+  defaultAssumptions,
+  DEFAULT_VERIFIED_FAQS,
+} from "./seed";
 import {
   loadStoreFromSupabase,
   persistStoreToSupabase,
@@ -29,6 +33,11 @@ function migrateStore(store: AppStore): AppStore {
   if (!store.messages) store.messages = [];
   if (!store.intakeAudits) store.intakeAudits = [];
   if (!store.automationPolicies) store.automationPolicies = [];
+  if (!store.paymentRefs) store.paymentRefs = [];
+  if (!store.autopayEnrollments) store.autopayEnrollments = [];
+  if (!store.verifiedFaqs || store.verifiedFaqs.length === 0) {
+    store.verifiedFaqs = [...DEFAULT_VERIFIED_FAQS];
+  }
   for (const w of store.workOrders || []) {
     if (w.intakeAuditId === undefined) w.intakeAuditId = null;
     if (w.emergencyFlag === undefined) w.emergencyFlag = false;
@@ -87,7 +96,7 @@ function migrateStore(store: AppStore): AppStore {
     }
   }
 
-  store.version = 5;
+  store.version = 6;
   return store;
 }
 

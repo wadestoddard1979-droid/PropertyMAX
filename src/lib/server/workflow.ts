@@ -137,6 +137,10 @@ export function createWorkOrder(
     kind: "work_order.auto_triage",
     message: "System placed request under review for manager triage.",
   });
+  void enqueueJob("comms.request_ack", {
+    workOrderId: wo.id,
+    propertyId: property.id,
+  }).catch(() => undefined);
   return wo;
 }
 
@@ -500,6 +504,12 @@ export function contractorUpdateStatus(
       body: `${wo.title} · ${property.name}`,
     });
   }
+  void enqueueJob("comms.status_update", {
+    workOrderId: wo.id,
+    propertyId: property.id,
+    actorUserId: actor.id,
+    status,
+  }).catch(() => undefined);
   return wo;
 }
 

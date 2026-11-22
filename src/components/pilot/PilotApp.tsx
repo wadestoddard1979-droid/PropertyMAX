@@ -39,6 +39,7 @@ import DocumentsActivity from "@/components/pilot/DocumentsActivity";
 import MessagesPanel from "@/components/pilot/MessagesPanel";
 import MaintenanceIntake from "@/components/pilot/MaintenanceIntake";
 import PolicyVendors from "@/components/pilot/PolicyVendors";
+import TenantPayments from "@/components/pilot/TenantPayments";
 
 type Toast = string | null;
 type PilotView =
@@ -49,7 +50,8 @@ type PilotView =
   | "records"
   | "documents"
   | "messages"
-  | "policies";
+  | "policies"
+  | "payments";
 
 export default function PilotApp() {
   const [loading, setLoading] = useState(true);
@@ -194,6 +196,9 @@ export default function PilotApp() {
             <NavChip onClick={() => setView("home")}>Home</NavChip>
             <NavChip onClick={() => setView("records")}>Records</NavChip>
             <NavChip onClick={() => setView("documents")}>Docs</NavChip>
+            {user.role === "tenant" && (
+              <NavChip onClick={() => setView("payments")}>Payments</NavChip>
+            )}
             <NavChip
               onClick={() => {
                 setMessageWorkOrderId(null);
@@ -270,6 +275,17 @@ export default function PilotApp() {
               setView("messages");
             }}
             onPolicies={() => setView("policies")}
+            onPayments={() => setView("payments")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "payments" && property && user.role === "tenant" && (
+          <TenantPayments
+            user={user}
+            property={property}
+            onBack={() => setView("home")}
             onToast={setToast}
             onError={setError}
           />
@@ -467,6 +483,7 @@ function RoleHome({
   onDocuments,
   onMessages,
   onPolicies,
+  onPayments,
   onToast,
   onError,
 }: {
@@ -485,6 +502,7 @@ function RoleHome({
   onDocuments: () => void;
   onMessages: () => void;
   onPolicies: () => void;
+  onPayments: () => void;
   onToast: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -587,7 +605,22 @@ function RoleHome({
                 }
               }}
             >
-              Enqueue reminder job
+              Enqueue rent reminder
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await enqueuePilotJob("reminder.lease_expiry", {
+                    propertyId: property?.id,
+                  });
+                  onToast("Queued lease renewal reminder");
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : "Enqueue failed");
+                }
+              }}
+            >
+              Enqueue lease renewal
             </Button>
             <Button
               variant="soft"
@@ -628,13 +661,18 @@ function RoleHome({
 
       {user.role === "tenant" && (
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="panel px-4 py-4">
+          <button
+            type="button"
+            onClick={onPayments}
+            className="panel px-4 py-4 text-left transition hover:border-[var(--accent)]/40"
+          >
             <p className="display text-lg font-semibold">Pay Rent</p>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Demo stub · {moneyFromCents((property?.monthlyRent || 0) * 100)}{" "}
-              due Dec 1
+              Hosted checkout ·{" "}
+              {moneyFromCents((property?.monthlyRent || 0) * 100)} · cards never
+              stored
             </p>
-          </div>
+          </button>
           <button
             type="button"
             onClick={onNew}
