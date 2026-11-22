@@ -1,9 +1,12 @@
-# PropertMax — Phase 1 Pilot
+# PropertMax — Phase 1 Pilot (closeout)
 
 Production-oriented Phase 1 path for the townhouse pilot:
 
-1. **Maintenance:** tenant intake → work order → estimate → owner approval (over threshold) → contractor
-2. **Owner financials:** cash flow (NOI vs after debt service), actual vs forecast, adjustable 12-mo / 3-yr / 5-yr projections, renovation ROI / vacancy cost insights
+1. **Property / unit / lease records** — manager edit; owner/tenant authorized views
+2. **Documents + activity history** — role-filtered surfaces for all roles
+3. **Maintenance:** tenant intake → work order → estimate → owner approval (over threshold) → contractor
+4. **Owner financials:** cash flow (NOI vs after debt service), actual vs forecast, adjustable projections; **manual rent/expense entry** clearly labeled illustrative vs manual vs verified
+5. **Messages** — property and work-order threads with server RBAC
 
 Sites-style clickable prototype remains at `/sites-demo`.
 
@@ -41,16 +44,18 @@ npm run build && npm run start -- -p 3000
 
 Open http://localhost:3000
 
-## Owner financials click path
+## Phase 1 closeout click paths
 
-1. Sign in as **Owner**
-2. **Open financials** (or header Financials)
-3. Review actual vs forecast cash flow + pending faucet approval card
-4. Switch **12 mo / 3 yr / 5 yr**, edit assumptions → Save
-5. Optionally add a manual ledger entry (labeled manual, not bank-verified)
+1. Sign in as **Manager** → **Records** → edit property/unit/lease → Save
+2. **Docs** → view role-filtered documents + activity timeline; add a document reference
+3. **Messages** → open faucet work-order thread or start a property thread
+4. Sign in as **Owner** → **Financials** → review ledger badges (illustrative vs manual) → add a manual entry
+5. Sign in as **Tenant** → **Records** (lease view) · **Message** · **Request Repair**
 
-## Branches
+## Data quality labels (ledger)
 
-- `cursor/townhouse-sites-demo-0807` — Sites demo
-- `cursor/maintenance-mvp-0807` — maintenance MVP
-- `cursor/owner-financials-mvp-0807` — owner financials (this branch)
+| Source | Meaning |
+|--------|---------|
+| `illustrative` | Seed / demo planning figures |
+| `manual` | Human-entered in the pilot UI — **not bank-verified** |
+| `verified` | Reserved for future bank sync (not produced in Phase 1) |

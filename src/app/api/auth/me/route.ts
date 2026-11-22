@@ -1,12 +1,13 @@
 import { getSession } from "@/lib/server/auth";
 import { readStore } from "@/lib/server/db";
+import { propertiesVisibleTo } from "@/lib/server/records";
 
 export async function GET() {
   const store = await readStore();
-  const property = store.properties[0] ?? null;
+  const fallbackProperty = store.properties[0] ?? null;
   const policy = {
     ownerApprovalThresholdCents:
-      property?.ownerApprovalThresholdCents ?? 20000,
+      fallbackProperty?.ownerApprovalThresholdCents ?? 20000,
     persistence: "local-json",
     // TODO(supabase): auth + Postgres
   };
@@ -21,16 +22,24 @@ export async function GET() {
   if (!session) {
     return Response.json({
       user: null,
-      property,
+      property: fallbackProperty,
       policy,
       pilotUsers,
     });
   }
 
+  const visible = propertiesVisibleTo(store, session);
+  const property = visible[0] ?? fallbackProperty;
+
   return Response.json({
     user: session,
     property,
-    policy,
+    policy: {
+      ...policy,
+      ownerApprovalThresholdCents:
+        property?.ownerApprovalThresholdCents ??
+        policy.ownerApprovalThresholdCents,
+    },
     pilotUsers,
   });
 }

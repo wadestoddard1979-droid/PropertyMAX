@@ -1,10 +1,16 @@
 import type {
   ActivityEvent,
+  DocumentRecord,
   LedgerEntry,
+  Lease,
+  Message,
+  MessageThread,
   Notification,
   ProjectionAssumptions,
   Property,
+  Role,
   SessionUser,
+  Unit,
   Urgency,
   Vendor,
   WorkOrder,
@@ -192,4 +198,91 @@ export function moneyFromCents(cents: number | null | undefined) {
     currency: "USD",
     maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
   });
+}
+
+export function fetchRecords() {
+  return api<{
+    properties: Property[];
+    units: Unit[];
+    leases: Lease[];
+    documents: DocumentRecord[];
+    activity: ActivityEvent[];
+    people: { id: string; name: string; role: Role; email: string }[];
+    canEdit: boolean;
+  }>("/api/records");
+}
+
+export function patchRecord(
+  entity: "property" | "unit" | "lease",
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  return api<{ entity: string; record: Property | Unit | Lease }>(
+    "/api/records",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ entity, id, patch }),
+    },
+  );
+}
+
+export function fetchDocuments() {
+  return api<{ documents: DocumentRecord[] }>("/api/documents");
+}
+
+export function postDocument(input: {
+  propertyId: string;
+  title: string;
+  category: DocumentRecord["category"];
+  fileName?: string;
+  note?: string;
+  workOrderId?: string | null;
+  leaseId?: string | null;
+  visibility?: Role[];
+}) {
+  return api<{ document: DocumentRecord }>("/api/documents", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchMessages(params?: {
+  threadId?: string;
+  workOrderId?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params?.threadId) q.set("threadId", params.threadId);
+  if (params?.workOrderId) q.set("workOrderId", params.workOrderId);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return api<{
+    threads: MessageThread[];
+    thread?: MessageThread | null;
+    messages?: Message[];
+    people?: { id: string; name: string; role: Role }[];
+  }>(`/api/messages${suffix}`);
+}
+
+export function postMessageReply(threadId: string, body: string) {
+  return api<{ thread: MessageThread; message: Message }>("/api/messages", {
+    method: "POST",
+    body: JSON.stringify({ action: "reply", threadId, body }),
+  });
+}
+
+export function createMessageThread(input: {
+  propertyId: string;
+  subject: string;
+  body: string;
+  workOrderId?: string | null;
+}) {
+  return api<{ thread: MessageThread; message: Message }>("/api/messages", {
+    method: "POST",
+    body: JSON.stringify({ action: "create", ...input }),
+  });
+}
+
+export function ledgerSourceLabel(source: LedgerEntry["source"]) {
+  if (source === "verified") return "Bank-verified";
+  if (source === "manual") return "Manual entry · not bank-verified";
+  return "Illustrative · not bank-verified";
 }
