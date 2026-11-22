@@ -1,10 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  createWorkOrder,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import {
+  drainPilotJobs,
+  enqueuePilotJob,
+  fetchIntakeAudit,
   fetchMe,
   fetchNotifications,
+  fetchSystemStatus,
   fetchWorkOrders,
   login,
   logout,
@@ -15,43 +25,94 @@ import {
 } from "@/lib/api-client";
 import type {
   ActivityEvent,
+  IntakeAudit,
   Notification,
   Property,
   SessionUser,
-  Urgency,
   Vendor,
   WorkOrder,
 } from "@/lib/types";
 import { STATUS_LABELS } from "@/lib/types";
 import { Button, SectionLabel, StatusChip } from "@/components/ui";
 import OwnerFinancials from "@/components/pilot/OwnerFinancials";
+import PropertyRecords from "@/components/pilot/PropertyRecords";
+import DocumentsActivity from "@/components/pilot/DocumentsActivity";
+import MessagesPanel from "@/components/pilot/MessagesPanel";
+import MaintenanceIntake from "@/components/pilot/MaintenanceIntake";
+import PolicyVendors from "@/components/pilot/PolicyVendors";
+import TenantPayments from "@/components/pilot/TenantPayments";
+import OwnerReportsReno from "@/components/pilot/OwnerReportsReno";
+import CommercialPlatform from "@/components/pilot/CommercialPlatform";
 
 type Toast = string | null;
+type PilotView =
+  | "home"
+  | "new"
+  | "detail"
+  | "financials"
+  | "records"
+  | "documents"
+  | "messages"
+  | "policies"
+  | "payments"
+  | "reports"
+  | "commercial";
+
+type ThemeState = {
+  orgId: string;
+  brandName: string;
+  logoText: string;
+  tagline: string;
+  primaryColor: string;
+  accentColor: string;
+  surfaceColor: string;
+  mark: string;
+} | null;
 
 export default function PilotApp() {
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<SessionUser | null>(null);
+  const [user, setUser] = useState<(SessionUser & { mfaEnabled?: boolean }) | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [theme, setTheme] = useState<ThemeState>(null);
   const [threshold, setThreshold] = useState(20000);
+  const [persistence, setPersistence] = useState("local-json");
+  const [authMode, setAuthMode] = useState("cookie-demo");
   const [pilotUsers, setPilotUsers] = useState<
-    { email: string; name: string; role: string; passwordHint: string }[]
+    {
+      email: string;
+      name: string;
+      role: string;
+      passwordHint: string;
+      orgIds?: string[];
+    }[]
   >([]);
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"home" | "new" | "detail" | "financials">(
-    "home",
+  const [messageWorkOrderId, setMessageWorkOrderId] = useState<string | null>(
+    null,
   );
+  const [view, setView] = useState<PilotView>("home");
   const [toast, setToast] = useState<Toast>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const me = await fetchMe();
+    const [me, sys] = await Promise.all([
+      fetchMe(),
+      fetchSystemStatus().catch(() => null),
+    ]);
     setUser(me.user);
     setProperty(me.property);
+    setProperties(me.properties || (me.property ? [me.property] : []));
+    setTheme(me.theme || null);
     setThreshold(me.policy?.ownerApprovalThresholdCents ?? 20000);
+    setPersistence(
+      sys?.persistenceLabel || me.policy?.persistence || "local-json",
+    );
+    setAuthMode(sys?.auth || me.policy?.auth || "cookie-demo");
     setPilotUsers(me.pilotUsers ?? []);
     if (!me.user) {
       setWorkOrders([]);
@@ -137,33 +198,68 @@ export default function PilotApp() {
       <LoginScreen
         pilotUsers={pilotUsers}
         threshold={threshold}
+        persistence={persistence}
+        authMode={authMode}
         error={error}
         onLogin={handleLogin}
       />
     );
   }
 
+  const brandStyle = theme
+    ? ({
+        ["--accent" as string]: theme.primaryColor,
+        ["--accent-deep" as string]: theme.accentColor,
+        ["--accent-soft" as string]: theme.surfaceColor,
+        ["--demo-banner" as string]: theme.accentColor,
+      } as CSSProperties)
+    : undefined;
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={brandStyle}>
       <header className="sticky top-0 z-40 border-b border-white/10 bg-[var(--demo-banner)] text-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           <div className="min-w-0">
             <p className="display text-sm font-semibold tracking-tight">
-              PropertMax
+              {theme?.logoText || "PropertMax"}
             </p>
             <p className="truncate text-xs text-white/55">
-              Phase 1 pilot · maintenance + owner financials · local JSON
+              Phase 3 · {theme?.brandName || "commercial"} · {persistence}
+              {user.orgId ? ` · ${user.orgId}` : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {user.role === "owner" && (
-              <button
-                type="button"
-                className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
-                onClick={() => setView("financials")}
-              >
+            <NavChip onClick={() => setView("home")}>Home</NavChip>
+            <NavChip onClick={() => setView("records")}>Records</NavChip>
+            <NavChip onClick={() => setView("documents")}>Docs</NavChip>
+            {user.role === "tenant" && (
+              <NavChip onClick={() => setView("payments")}>Payments</NavChip>
+            )}
+            <NavChip
+              onClick={() => {
+                setMessageWorkOrderId(null);
+                setView("messages");
+              }}
+            >
+              Messages
+            </NavChip>
+            {(user.role === "manager" || user.role === "owner") && (
+              <NavChip onClick={() => setView("policies")}>Policies</NavChip>
+            )}
+            {(user.role === "owner" || user.role === "manager") && (
+              <NavChip onClick={() => setView("financials")}>
                 Financials
-              </button>
+              </NavChip>
+            )}
+            {(user.role === "owner" || user.role === "manager") && (
+              <NavChip onClick={() => setView("reports")}>
+                Reports / Reno
+              </NavChip>
+            )}
+            {(user.role === "owner" || user.role === "manager") && (
+              <NavChip onClick={() => setView("commercial")}>
+                Commercial
+              </NavChip>
             )}
             <StatusChip tone="accent">
               {user.role} · {user.name}
@@ -210,12 +306,72 @@ export default function PilotApp() {
             notifications={notifications}
             activity={activity}
             threshold={threshold}
+            persistence={persistence}
+            authMode={authMode}
             onOpen={(id) => {
               setSelectedId(id);
               setView("detail");
             }}
             onNew={() => setView("new")}
             onFinancials={() => setView("financials")}
+            onRecords={() => setView("records")}
+            onDocuments={() => setView("documents")}
+            onMessages={() => {
+              setMessageWorkOrderId(null);
+              setView("messages");
+            }}
+            onPolicies={() => setView("policies")}
+            onPayments={() => setView("payments")}
+            onReports={() => setView("reports")}
+            onCommercial={() => setView("commercial")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "commercial" &&
+          (user.role === "owner" || user.role === "manager") && (
+            <CommercialPlatform
+              user={user}
+              orgId={user.orgId || "org-pilot"}
+              onBack={() => setView("home")}
+              onToast={setToast}
+              onError={setError}
+              onOrgChanged={() => {
+                void refresh();
+              }}
+            />
+          )}
+
+        {view === "reports" &&
+          property &&
+          (user.role === "owner" || user.role === "manager") && (
+            <OwnerReportsReno
+              user={user}
+              propertyId={property.id}
+              onBack={() => setView("home")}
+              onToast={setToast}
+              onError={setError}
+            />
+          )}
+
+        {view === "payments" && property && user.role === "tenant" && (
+          <TenantPayments
+            user={user}
+            property={property}
+            onBack={() => setView("home")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "policies" && property && (
+          <PolicyVendors
+            user={user}
+            propertyId={property.id}
+            onBack={() => setView("home")}
+            onToast={setToast}
+            onError={setError}
           />
         )}
 
@@ -232,15 +388,45 @@ export default function PilotApp() {
           />
         )}
 
+        {view === "records" && (
+          <PropertyRecords
+            user={user}
+            onBack={() => setView("home")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "documents" && property && (
+          <DocumentsActivity
+            user={user}
+            propertyId={property.id}
+            onBack={() => setView("home")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "messages" && property && (
+          <MessagesPanel
+            user={user}
+            propertyId={property.id}
+            initialWorkOrderId={messageWorkOrderId}
+            onBack={() => setView("home")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
         {view === "new" && property && (
-          <NewRequest
+          <MaintenanceIntake
             property={property}
             onCancel={() => setView("home")}
             onCreated={async (id) => {
               await refresh();
               setSelectedId(id);
               setView("detail");
-              setToast("Work order created");
+              setToast("Intake classified · work order created (no spend authorized)");
             }}
           />
         )}
@@ -256,6 +442,10 @@ export default function PilotApp() {
             onBack={() => {
               setView("home");
               setSelectedId(null);
+            }}
+            onOpenMessages={() => {
+              setMessageWorkOrderId(selected.id);
+              setView("messages");
             }}
             onChanged={async (msg) => {
               await refresh();
@@ -278,11 +468,15 @@ export default function PilotApp() {
 function LoginScreen({
   pilotUsers,
   threshold,
+  persistence,
+  authMode,
   error,
   onLogin,
 }: {
   pilotUsers: { email: string; name: string; role: string; passwordHint: string }[];
   threshold: number;
+  persistence: string;
+  authMode: string;
   error: string | null;
   onLogin: (email: string) => void;
 }) {
@@ -292,13 +486,14 @@ function LoginScreen({
         PropertMax
       </p>
       <p className="mt-2 max-w-xl text-[var(--muted)]">
-        Phase 1 pilot — maintenance workflow + owner cash flow / projections.
-        Password for all sample users: <strong>pilot</strong>. Owner approval
-        required over {moneyFromCents(threshold)}.
+        Phase 3 commercial — multi-org, SaaS demo billing, portfolios, white-label.
+        Local-json
+        fallback. Password for all sample users: <strong>pilot</strong>. Owner
+        approval required over {moneyFromCents(threshold)}.
       </p>
       <p className="mt-2 text-xs text-[var(--muted)]">
-        Persistence: local JSON file (`data/propertmax-store.json`). TODO:
-        Supabase Auth + Postgres RLS.
+        Persistence: <strong>{persistence}</strong> · Auth: {authMode}. Without
+        Supabase env vars the app stays on local JSON so builds work offline.
       </p>
       {error && (
         <p className="mt-4 text-sm text-[var(--danger)]">{error}</p>
@@ -329,6 +524,24 @@ function LoginScreen({
   );
 }
 
+function NavChip({
+  children,
+  onClick,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function RoleHome({
   user,
   property,
@@ -336,9 +549,20 @@ function RoleHome({
   notifications,
   activity,
   threshold,
+  persistence,
+  authMode,
   onOpen,
   onNew,
   onFinancials,
+  onRecords,
+  onDocuments,
+  onMessages,
+  onPolicies,
+  onPayments,
+  onReports,
+  onCommercial,
+  onToast,
+  onError,
 }: {
   user: SessionUser;
   property: Property | null;
@@ -346,9 +570,20 @@ function RoleHome({
   notifications: Notification[];
   activity: ActivityEvent[];
   threshold: number;
+  persistence: string;
+  authMode: string;
   onOpen: (id: string) => void;
   onNew: () => void;
   onFinancials: () => void;
+  onRecords: () => void;
+  onDocuments: () => void;
+  onMessages: () => void;
+  onPolicies: () => void;
+  onPayments: () => void;
+  onReports: () => void;
+  onCommercial: () => void;
+  onToast: (msg: string) => void;
+  onError: (msg: string) => void;
 }) {
   const attention = workOrders.filter((w) => {
     if (user.role === "owner")
@@ -362,7 +597,12 @@ function RoleHome({
         "awaiting_owner_approval",
       ].includes(w.status);
     if (user.role === "contractor")
-      return ["assigned", "scheduled", "in_progress"].includes(w.status);
+      return [
+        "awaiting_estimate",
+        "assigned",
+        "scheduled",
+        "in_progress",
+      ].includes(w.status);
     return true;
   });
 
@@ -388,14 +628,105 @@ function RoleHome({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {user.role === "owner" && (
+          <Button variant="secondary" onClick={onRecords}>
+            Records
+          </Button>
+          <Button variant="secondary" onClick={onDocuments}>
+            Docs & activity
+          </Button>
+          <Button variant="secondary" onClick={onMessages}>
+            Messages
+          </Button>
+          {(user.role === "manager" || user.role === "owner") && (
+            <Button variant="secondary" onClick={onPolicies}>
+              Policies & vendors
+            </Button>
+          )}
+          {(user.role === "owner" || user.role === "manager") && (
             <Button onClick={onFinancials}>Open financials</Button>
+          )}
+          {(user.role === "owner" || user.role === "manager") && (
+            <Button variant="secondary" onClick={onReports}>
+              Reports / reno
+            </Button>
+          )}
+          {(user.role === "owner" || user.role === "manager") && (
+            <Button variant="secondary" onClick={onCommercial}>
+              Commercial platform
+            </Button>
           )}
           {(user.role === "tenant" || user.role === "manager") && (
             <Button onClick={onNew}>Request repair</Button>
           )}
         </div>
       </header>
+
+      <section className="panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <SectionLabel>Phase 2 foundation</SectionLabel>
+            <p className="mt-1 text-sm text-[var(--ink-soft)]">
+              Persistence <strong>{persistence}</strong> · Auth {authMode}
+            </p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Supabase Postgres + RLS + Storage + job queue when env is set;
+              otherwise local JSON demo mode (no secrets required).
+            </p>
+          </div>
+          <StatusChip
+            tone={persistence.includes("supabase") ? "positive" : "neutral"}
+          >
+            {persistence}
+          </StatusChip>
+        </div>
+        {user.role === "manager" && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await enqueuePilotJob("reminder.rent", {
+                    propertyId: property?.id,
+                  });
+                  onToast("Queued rent reminder job");
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : "Enqueue failed");
+                }
+              }}
+            >
+              Enqueue rent reminder
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await enqueuePilotJob("reminder.lease_expiry", {
+                    propertyId: property?.id,
+                  });
+                  onToast("Queued lease renewal reminder");
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : "Enqueue failed");
+                }
+              }}
+            >
+              Enqueue lease renewal
+            </Button>
+            <Button
+              variant="soft"
+              onClick={async () => {
+                try {
+                  const res = await drainPilotJobs();
+                  onToast(`Processed ${res.processed} due job(s)`);
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : "Drain failed");
+                }
+              }}
+            >
+              Drain job queue
+            </Button>
+          </div>
+        )}
+      </section>
 
       {user.role === "owner" && property && (
         <button
@@ -419,13 +750,18 @@ function RoleHome({
 
       {user.role === "tenant" && (
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="panel px-4 py-4">
+          <button
+            type="button"
+            onClick={onPayments}
+            className="panel px-4 py-4 text-left transition hover:border-[var(--accent)]/40"
+          >
             <p className="display text-lg font-semibold">Pay Rent</p>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Demo stub · {moneyFromCents((property?.monthlyRent || 0) * 100)}{" "}
-              due Dec 1
+              Hosted checkout ·{" "}
+              {moneyFromCents((property?.monthlyRent || 0) * 100)} · cards never
+              stored
             </p>
-          </div>
+          </button>
           <button
             type="button"
             onClick={onNew}
@@ -433,15 +769,19 @@ function RoleHome({
           >
             <p className="display text-lg font-semibold">Request Repair</p>
             <p className="mt-1 text-sm text-white/85">
-              Creates a durable work order
+              Guided AI intake → structured work order
             </p>
           </button>
-          <div className="panel px-4 py-4">
+          <button
+            type="button"
+            onClick={onMessages}
+            className="panel px-4 py-4 text-left transition hover:border-[var(--accent)]/40"
+          >
             <p className="display text-lg font-semibold">Message</p>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Use work-order thread for now
+              Property & work-order threads
             </p>
-          </div>
+          </button>
         </div>
       )}
 
@@ -527,126 +867,6 @@ function RoleHome({
   );
 }
 
-function NewRequest({
-  property,
-  onCancel,
-  onCreated,
-}: {
-  property: Property;
-  onCancel: () => void;
-  onCreated: (id: string) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [details, setDetails] = useState("");
-  const [urgency, setUrgency] = useState<Urgency>("routine");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const prompts = [
-    {
-      title: "Bathroom exhaust fan rattling",
-      details:
-        "The bathroom fan makes a loud rattle when turned on. Started this week. Not an emergency.",
-      urgency: "routine" as Urgency,
-      category: "Electrical",
-    },
-    {
-      title: "Kitchen sink dripping again",
-      details: "Drip under spout after faucet was previously marked fixed.",
-      urgency: "soon" as Urgency,
-      category: "Plumbing",
-    },
-  ];
-
-  async function submit() {
-    setBusy(true);
-    setErr(null);
-    try {
-      const { workOrder } = await createWorkOrder({
-        propertyId: property.id,
-        title,
-        details,
-        urgency,
-        category: title.toLowerCase().includes("fan")
-          ? "Electrical"
-          : "Plumbing",
-      });
-      onCreated(workOrder.id);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fade-in space-y-5">
-      <button
-        type="button"
-        className="text-sm font-medium text-[var(--accent)]"
-        onClick={onCancel}
-      >
-        ← Back
-      </button>
-      <h1 className="display text-3xl font-semibold">Request a repair</h1>
-      <div className="panel space-y-4 p-5">
-        <div className="flex flex-wrap gap-2">
-          {prompts.map((p) => (
-            <button
-              key={p.title}
-              type="button"
-              className="rounded-full border border-[var(--line-strong)] bg-white px-3 py-1.5 text-xs font-medium"
-              onClick={() => {
-                setTitle(p.title);
-                setDetails(p.details);
-                setUrgency(p.urgency);
-              }}
-            >
-              {p.title}
-            </button>
-          ))}
-        </div>
-        <input
-          className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
-          placeholder="Short title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <textarea
-          className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
-          rows={4}
-          placeholder="Details"
-          value={details}
-          onChange={(e) => setDetails(e.target.value)}
-        />
-        <div className="grid grid-cols-3 gap-2">
-          {(["routine", "soon", "urgent"] as Urgency[]).map((u) => (
-            <button
-              key={u}
-              type="button"
-              onClick={() => setUrgency(u)}
-              className={`rounded-xl border px-3 py-2 text-sm font-medium capitalize ${
-                urgency === u
-                  ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                  : "border-[var(--line)]"
-              }`}
-            >
-              {u}
-            </button>
-          ))}
-        </div>
-        {err && <p className="text-sm text-[var(--danger)]">{err}</p>}
-        <Button
-          disabled={busy || title.trim().length < 3 || details.trim().length < 4}
-          onClick={submit}
-        >
-          Submit work order
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function WorkOrderDetail({
   user,
   property,
@@ -655,6 +875,7 @@ function WorkOrderDetail({
   activity,
   threshold,
   onBack,
+  onOpenMessages,
   onChanged,
   onError,
 }: {
@@ -665,6 +886,7 @@ function WorkOrderDetail({
   activity: ActivityEvent[];
   threshold: number;
   onBack: () => void;
+  onOpenMessages: () => void;
   onChanged: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -675,6 +897,17 @@ function WorkOrderDetail({
   const [vendorId, setVendorId] = useState(vendors[0]?.id || "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [intakeAudit, setIntakeAudit] = useState<IntakeAudit | null>(null);
+
+  useEffect(() => {
+    if (!workOrder.intakeAuditId && !workOrder.id) return;
+    fetchIntakeAudit({
+      auditId: workOrder.intakeAuditId || undefined,
+      workOrderId: workOrder.id,
+    })
+      .then((res) => setIntakeAudit(res.audit))
+      .catch(() => setIntakeAudit(null));
+  }, [workOrder.id, workOrder.intakeAuditId]);
 
   async function run(action: () => Promise<void>, okMsg: string) {
     setBusy(true);
@@ -707,14 +940,49 @@ function WorkOrderDetail({
             {workOrder.details}
           </p>
         </div>
-        <StatusChip
-          tone={
-            workOrder.status === "awaiting_owner_approval" ? "warn" : "accent"
-          }
-        >
-          {STATUS_LABELS[workOrder.status]}
-        </StatusChip>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={onOpenMessages}>
+            Open message thread
+          </Button>
+          {workOrder.emergencyFlag && (
+            <StatusChip tone="warn">Emergency flag</StatusChip>
+          )}
+          <StatusChip
+            tone={
+              workOrder.status === "awaiting_owner_approval" ? "warn" : "accent"
+            }
+          >
+            {STATUS_LABELS[workOrder.status]}
+          </StatusChip>
+        </div>
       </header>
+
+      {intakeAudit && (
+        <section className="panel space-y-3 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionLabel>Intake classification audit</SectionLabel>
+            <StatusChip tone="warn">
+              spendAuthorized = {String(intakeAudit.classification.spendAuthorized)}
+            </StatusChip>
+          </div>
+          <p className="text-sm text-[var(--ink-soft)]">
+            {intakeAudit.classification.category} ·{" "}
+            {intakeAudit.classification.urgency} ·{" "}
+            {intakeAudit.classification.engine} ·{" "}
+            {Math.round(intakeAudit.classification.confidence * 100)}% confidence
+          </p>
+          <ol className="space-y-2 text-sm">
+            {intakeAudit.trace.map((t, i) => (
+              <li key={`${t.step}-${i}`}>
+                <span className="font-semibold text-[var(--muted)]">
+                  {t.step}:
+                </span>{" "}
+                {t.detail}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <section className="panel space-y-4 p-5">
@@ -754,17 +1022,64 @@ function WorkOrderDetail({
               Owner note: {workOrder.ownerNote}
             </p>
           )}
+          {workOrder.policyDecisionReason && (
+            <p className="rounded-xl bg-[var(--accent-soft)] px-3 py-2 text-sm text-[var(--accent-deep)]">
+              Policy decision: {workOrder.policyDecisionReason.replaceAll("_", " ")}{" "}
+              (AI cannot override)
+            </p>
+          )}
 
-          {/* Manager: add estimate */}
+          {/* Manager: request vendor quote */}
+          {user.role === "manager" &&
+            ["under_review", "reported"].includes(workOrder.status) && (
+              <div className="space-y-3 border-t border-[var(--line)] pt-4">
+                <p className="text-sm font-semibold">Request vendor estimate</p>
+                <p className="text-xs text-[var(--muted)]">
+                  Preferred vendors are configured under Policies. Quote returns
+                  through spending policy — never auto-approved because AI
+                  recommended it.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    className="rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                    value={vendorId}
+                    onChange={(e) => setVendorId(e.target.value)}
+                  >
+                    {vendors.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name} · {v.trade}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    disabled={busy || !vendorId}
+                    onClick={() =>
+                      run(
+                        () =>
+                          patchWorkOrder(workOrder.id, {
+                            action: "request_vendor_estimate",
+                            vendorId,
+                          }).then(() => undefined),
+                        "Vendor estimate requested",
+                      )
+                    }
+                  >
+                    Request quote
+                  </Button>
+                </div>
+              </div>
+            )}
+
+          {/* Manager: add estimate directly */}
           {user.role === "manager" &&
             ["under_review", "reported", "awaiting_estimate"].includes(
               workOrder.status,
             ) && (
               <div className="space-y-3 border-t border-[var(--line)] pt-4">
-                <p className="text-sm font-semibold">Add estimate</p>
+                <p className="text-sm font-semibold">Enter estimate (manager)</p>
                 <p className="text-xs text-[var(--muted)]">
-                  Over {moneyFromCents(threshold)} → owner must approve. At or
-                  under → auto-approved for assignment.
+                  Policy threshold {moneyFromCents(threshold)}. Preapproved
+                  categories under threshold auto-clear; others need owner.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <input
@@ -805,7 +1120,7 @@ function WorkOrderDetail({
                           estimateNotes,
                           vendorId,
                         });
-                      }, "Estimate saved")
+                      }, "Estimate saved · policy applied")
                     }
                   >
                     Save estimate (${estimateDollars || "0"})
@@ -816,13 +1131,58 @@ function WorkOrderDetail({
                     onClick={() => {
                       setEstimateDollars("150");
                       setEstimateNotes(
-                        "Under-threshold illustrative quote for auto-approve demo.",
+                        "Under-threshold illustrative quote for preapproved demo.",
                       );
                     }}
                   >
                     Try $150 (under threshold)
                   </Button>
                 </div>
+              </div>
+            )}
+
+          {/* Contractor: submit quote */}
+          {user.role === "contractor" &&
+            workOrder.status === "awaiting_estimate" && (
+              <div className="space-y-3 border-t border-[var(--line)] pt-4">
+                <p className="text-sm font-semibold">Submit your quote</p>
+                <p className="text-xs text-[var(--muted)]">
+                  Your quote is routed by the property spend policy. You cannot
+                  authorize owner spend.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    className="w-28 rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                    value={estimateDollars}
+                    onChange={(e) => setEstimateDollars(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="$"
+                  />
+                </div>
+                <textarea
+                  className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                  rows={2}
+                  value={estimateNotes}
+                  onChange={(e) => setEstimateNotes(e.target.value)}
+                  placeholder="Parts + labor notes"
+                />
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      const cents = Math.round(
+                        parseFloat(estimateDollars) * 100,
+                      );
+                      await patchWorkOrder(workOrder.id, {
+                        action: "submit_vendor_quote",
+                        estimateCents: cents,
+                        estimateNotes,
+                      });
+                    }, "Quote submitted · policy routing applied")
+                  }
+                >
+                  Submit quote (${estimateDollars || "0"})
+                </Button>
               </div>
             )}
 

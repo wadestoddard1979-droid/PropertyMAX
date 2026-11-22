@@ -1,29 +1,29 @@
-import { readStore } from "@/lib/server/db";
-import { setSessionCookie } from "@/lib/server/auth";
+import { AuthError, jsonError, loginWithPassword } from "@/lib/server/auth";
 
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => null)) as {
-    email?: string;
-    password?: string;
-  } | null;
-  if (!body?.email || !body?.password) {
-    return Response.json({ error: "Email and password required" }, { status: 400 });
+  try {
+    const body = (await req.json().catch(() => null)) as {
+      email?: string;
+      password?: string;
+      orgId?: string;
+    } | null;
+    if (!body?.email || !body?.password) {
+      return Response.json(
+        { error: "Email and password required" },
+        { status: 400 },
+      );
+    }
+    const result = await loginWithPassword(
+      body.email,
+      body.password,
+      body.orgId,
+    );
+    return Response.json({
+      user: result.user,
+      authVia: result.via,
+    });
+  } catch (err) {
+    if (err instanceof AuthError) return jsonError(err);
+    return jsonError(err);
   }
-  const store = await readStore();
-  const user = store.users.find(
-    (u) =>
-      u.email.toLowerCase() === body.email!.toLowerCase() &&
-      u.password === body.password,
-  );
-  if (!user) {
-    return Response.json({ error: "Invalid credentials" }, { status: 401 });
-  }
-  const session = {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  };
-  await setSessionCookie(session);
-  return Response.json({ user: session });
 }

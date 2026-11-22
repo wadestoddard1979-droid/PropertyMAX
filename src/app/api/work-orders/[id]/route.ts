@@ -5,8 +5,11 @@ import {
   assignContractor,
   contractorUpdateStatus,
   ownerDecide,
+  requestVendorEstimate,
+  submitVendorQuote,
   workOrdersVisibleTo,
 } from "@/lib/server/workflow";
+import { getPolicyForProperty, reasonLabel } from "@/lib/server/policies";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -19,11 +22,21 @@ export async function GET(_req: Request, ctx: Ctx) {
     const workOrder = visible.find((w) => w.id === id);
     if (!workOrder) throw new AuthError("Not found", 404);
     const activity = store.activity.filter((a) => a.workOrderId === id);
+    const property = store.properties.find(
+      (p) => p.id === workOrder.propertyId,
+    );
+    const policy = property
+      ? getPolicyForProperty(store, property.id)
+      : null;
     return Response.json({
       workOrder,
       activity,
       vendors: store.vendors,
-      property: store.properties.find((p) => p.id === workOrder.propertyId),
+      property,
+      policy,
+      policyReasonLabel: workOrder.policyDecisionReason
+        ? reasonLabel(workOrder.policyDecisionReason)
+        : null,
     });
   } catch (err) {
     return jsonError(err);
@@ -96,6 +109,29 @@ export async function PATCH(req: Request, ctx: Ctx) {
             session,
             id,
             body.status,
+          );
+          break;
+        }
+        case "request_vendor_estimate": {
+          if (!body.vendorId) throw new AuthError("vendorId required", 400);
+          workOrder = requestVendorEstimate(
+            store,
+            session,
+            id,
+            body.vendorId,
+          );
+          break;
+        }
+        case "submit_vendor_quote": {
+          if (typeof body.estimateCents !== "number") {
+            throw new AuthError("estimateCents required", 400);
+          }
+          workOrder = submitVendorQuote(
+            store,
+            session,
+            id,
+            body.estimateCents,
+            body.estimateNotes || "",
           );
           break;
         }
