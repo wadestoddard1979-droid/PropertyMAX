@@ -1,4 +1,14 @@
-import type { AppStore, LedgerEntry, ProjectionAssumptions } from "../types";
+import type {
+  AppStore,
+  DocumentRecord,
+  LedgerEntry,
+  Lease,
+  Message,
+  MessageThread,
+  ProjectionAssumptions,
+  Unit,
+} from "../types";
+import { defaultPolicyForProperty } from "./policies";
 
 export function defaultAssumptions(propertyId: string): ProjectionAssumptions {
   return {
@@ -97,11 +107,162 @@ function novemberLedger(now: string): LedgerEntry[] {
   }));
 }
 
+function mapleUnit(): Unit {
+  return {
+    id: "unit-maple-main",
+    propertyId: "prop-maple",
+    label: "Main townhouse",
+    beds: 3,
+    baths: 2.5,
+    sqft: 1680,
+    occupancy: "Occupied",
+    monthlyRentCents: 185000,
+  };
+}
+
+function mapleLease(): Lease {
+  return {
+    id: "lease-maple-2026",
+    propertyId: "prop-maple",
+    unitId: "unit-maple-main",
+    tenantIds: ["user-tenant"],
+    startDate: "2026-09-01",
+    endDate: "2027-08-31",
+    monthlyRentCents: 185000,
+    depositCents: 185000,
+    status: "active",
+    notes: "12-month residential lease. Pets not permitted without written approval.",
+  };
+}
+
+function mapleDocuments(now: string): DocumentRecord[] {
+  return [
+    {
+      id: "doc-lease-pdf",
+      propertyId: "prop-maple",
+      workOrderId: null,
+      leaseId: "lease-maple-2026",
+      title: "Residential lease agreement",
+      category: "lease",
+      fileName: "maple-lane-lease-2026.pdf",
+      uploadedByUserId: "user-manager",
+      visibility: ["owner", "manager", "tenant"],
+      note: "Fully executed lease · pilot metadata only (no blob storage yet).",
+      createdAt: "2026-08-20T15:00:00.000Z",
+    },
+    {
+      id: "doc-insurance",
+      propertyId: "prop-maple",
+      workOrderId: null,
+      leaseId: null,
+      title: "Landlord insurance declarations",
+      category: "insurance",
+      fileName: "maple-insurance-2026.pdf",
+      uploadedByUserId: "user-manager",
+      visibility: ["owner", "manager"],
+      note: "Illustrative policy summary for the pilot.",
+      createdAt: "2026-01-05T12:00:00.000Z",
+    },
+    {
+      id: "doc-faucet-photo",
+      propertyId: "prop-maple",
+      workOrderId: "wo-faucet-seed",
+      leaseId: null,
+      title: "Kitchen faucet drip photo",
+      category: "photo",
+      fileName: "faucet-drip.jpg",
+      uploadedByUserId: "user-tenant",
+      visibility: ["owner", "manager", "tenant", "contractor"],
+      note: "Attached to maintenance request.",
+      createdAt: "2026-11-16T18:41:00.000Z",
+    },
+    {
+      id: "doc-nov-statement",
+      propertyId: "prop-maple",
+      workOrderId: null,
+      leaseId: null,
+      title: "November owner statement (illustrative)",
+      category: "statement",
+      fileName: "owner-statement-2026-11.pdf",
+      uploadedByUserId: "user-manager",
+      visibility: ["owner", "manager"],
+      note: "Figures are illustrative — not bank-verified.",
+      createdAt: now,
+    },
+  ];
+}
+
+function mapleMessages(now: string): {
+  threads: MessageThread[];
+  messages: Message[];
+} {
+  return {
+    threads: [
+      {
+        id: "thread-faucet",
+        propertyId: "prop-maple",
+        workOrderId: "wo-faucet-seed",
+        subject: "Kitchen faucet replacement",
+        participantIds: ["user-tenant", "user-manager", "user-owner"],
+        createdAt: "2026-11-16T18:45:00.000Z",
+        updatedAt: "2026-11-17T15:10:00.000Z",
+      },
+      {
+        id: "thread-property",
+        propertyId: "prop-maple",
+        workOrderId: null,
+        subject: "847 Maple Lane — general",
+        participantIds: ["user-tenant", "user-manager", "user-owner"],
+        createdAt: "2026-09-02T14:00:00.000Z",
+        updatedAt: "2026-11-10T09:30:00.000Z",
+      },
+    ],
+    messages: [
+      {
+        id: "msg-1",
+        threadId: "thread-faucet",
+        authorUserId: "user-tenant",
+        body: "The kitchen faucet keeps dripping overnight. Photo attached to the request.",
+        createdAt: "2026-11-16T18:45:00.000Z",
+      },
+      {
+        id: "msg-2",
+        threadId: "thread-faucet",
+        authorUserId: "user-manager",
+        body: "Thanks — we categorized this as plumbing. Beachy Plumbing quoted $425 for a full faucet replacement.",
+        createdAt: "2026-11-17T14:25:00.000Z",
+      },
+      {
+        id: "msg-3",
+        threadId: "thread-faucet",
+        authorUserId: "user-owner",
+        body: "Looking at the quote now. Is the Moen Align the preferred option?",
+        createdAt: "2026-11-17T15:10:00.000Z",
+      },
+      {
+        id: "msg-4",
+        threadId: "thread-property",
+        authorUserId: "user-manager",
+        body: "Welcome to 847 Maple Lane. Reach out here for anything that is not an emergency repair.",
+        createdAt: "2026-09-02T14:00:00.000Z",
+      },
+      {
+        id: "msg-5",
+        threadId: "thread-property",
+        authorUserId: "user-tenant",
+        body: "Thanks — rent reminders look good. Will use this thread for general questions.",
+        createdAt: "2026-11-10T09:30:00.000Z",
+      },
+    ],
+  };
+}
+
 /** Pilot sample users — password is "pilot" for all. Replace with Supabase Auth. */
 export function createSeedStore(): AppStore {
   const now = new Date().toISOString();
+  const { threads, messages } = mapleMessages(now);
   return {
-    version: 2,
+    version: 5,
     seededAt: now,
     users: [
       {
@@ -149,8 +310,15 @@ export function createSeedStore(): AppStore {
         ownerApprovalThresholdCents: 20000, // $200
         monthlyRent: 1850,
         leaseEnd: "Aug 31, 2027",
+        notes:
+          "Pilot townhouse · Beachy Renovations turnover complete · single-unit record.",
       },
     ],
+    units: [mapleUnit()],
+    leases: [mapleLease()],
+    documents: mapleDocuments(now),
+    messageThreads: threads,
+    messages,
     vendors: [
       {
         id: "vendor-beach-plumbing",
@@ -184,6 +352,15 @@ export function createSeedStore(): AppStore {
     ],
     activity: [
       {
+        id: "act-0",
+        workOrderId: null,
+        propertyId: "prop-maple",
+        actorUserId: "user-manager",
+        kind: "property.records_seeded",
+        message: "Property, unit, and lease records established for Maple Lane.",
+        createdAt: "2026-08-20T15:05:00.000Z",
+      },
+      {
         id: "act-1",
         workOrderId: "wo-faucet-seed",
         propertyId: "prop-maple",
@@ -211,6 +388,15 @@ export function createSeedStore(): AppStore {
           "Estimate $425 added. Over $200 threshold — owner approval required.",
         createdAt: "2026-11-17T14:20:00.000Z",
       },
+      {
+        id: "act-4",
+        workOrderId: "wo-faucet-seed",
+        propertyId: "prop-maple",
+        actorUserId: "user-owner",
+        kind: "message.posted",
+        message: "Owner replied on the faucet thread.",
+        createdAt: "2026-11-17T15:10:00.000Z",
+      },
     ],
     notifications: [
       {
@@ -234,5 +420,13 @@ export function createSeedStore(): AppStore {
     ],
     ledger: novemberLedger(now),
     projectionAssumptions: [defaultAssumptions("prop-maple")],
+    intakeAudits: [],
+    automationPolicies: [
+      defaultPolicyForProperty("prop-maple", {
+        spendThresholdCents: 20000,
+        preferredVendorIds: ["vendor-beach-plumbing"],
+        escalationContactUserId: "user-manager",
+      }),
+    ],
   };
 }
