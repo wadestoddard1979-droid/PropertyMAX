@@ -1,12 +1,25 @@
 import type {
   ActivityEvent,
+  AutopayEnrollment,
+  AutomationPolicy,
+  DocumentRecord,
+  IntakeAnswers,
+  IntakeAudit,
+  IntakeClassification,
   LedgerEntry,
+  Lease,
+  Message,
+  MessageThread,
   Notification,
+  PaymentRef,
   ProjectionAssumptions,
   Property,
+  Role,
   SessionUser,
+  Unit,
   Urgency,
   Vendor,
+  VerifiedFaq,
   WorkOrder,
 } from "./types";
 
@@ -29,7 +42,13 @@ export function fetchMe() {
   return api<{
     user: SessionUser | null;
     property: Property | null;
-    policy: { ownerApprovalThresholdCents: number; persistence: string };
+    policy: {
+      ownerApprovalThresholdCents: number;
+      persistence: string;
+      auth?: string;
+      jobQueue?: string;
+      documentStorage?: string;
+    };
     pilotUsers: {
       email: string;
       name: string;
@@ -37,6 +56,34 @@ export function fetchMe() {
       passwordHint: string;
     }[];
   }>("/api/auth/me");
+}
+
+export function fetchSystemStatus() {
+  return api<{
+    persistence: string;
+    persistenceLabel: string;
+    supabaseConfigured: boolean;
+    allowDemoLogin: boolean;
+    auth: string;
+    jobQueue: string;
+    documentStorage: string;
+    productionQueueNote: string;
+    recentJobs: { id: string; kind: string; status: string }[];
+  }>("/api/system/status");
+}
+
+export function enqueuePilotJob(kind: string, payload?: Record<string, unknown>) {
+  return api<{ job: { id: string; kind: string; status: string } }>("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify({ action: "enqueue", kind, payload }),
+  });
+}
+
+export function drainPilotJobs() {
+  return api<{ processed: number }>("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify({ action: "drain" }),
+  });
 }
 
 export function login(email: string, password: string) {
@@ -192,4 +239,214 @@ export function moneyFromCents(cents: number | null | undefined) {
     currency: "USD",
     maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
   });
+}
+
+export function fetchRecords() {
+  return api<{
+    properties: Property[];
+    units: Unit[];
+    leases: Lease[];
+    documents: DocumentRecord[];
+    activity: ActivityEvent[];
+    people: { id: string; name: string; role: Role; email: string }[];
+    canEdit: boolean;
+  }>("/api/records");
+}
+
+export function patchRecord(
+  entity: "property" | "unit" | "lease",
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  return api<{ entity: string; record: Property | Unit | Lease }>(
+    "/api/records",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ entity, id, patch }),
+    },
+  );
+}
+
+export function fetchDocuments() {
+  return api<{ documents: DocumentRecord[] }>("/api/documents");
+}
+
+export function postDocument(input: {
+  propertyId: string;
+  title: string;
+  category: DocumentRecord["category"];
+  fileName?: string;
+  note?: string;
+  workOrderId?: string | null;
+  leaseId?: string | null;
+  visibility?: Role[];
+}) {
+  return api<{ document: DocumentRecord }>("/api/documents", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchMessages(params?: {
+  threadId?: string;
+  workOrderId?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params?.threadId) q.set("threadId", params.threadId);
+  if (params?.workOrderId) q.set("workOrderId", params.workOrderId);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return api<{
+    threads: MessageThread[];
+    thread?: MessageThread | null;
+    messages?: Message[];
+    people?: { id: string; name: string; role: Role }[];
+  }>(`/api/messages${suffix}`);
+}
+
+export function postMessageReply(threadId: string, body: string) {
+  return api<{ thread: MessageThread; message: Message }>("/api/messages", {
+    method: "POST",
+    body: JSON.stringify({ action: "reply", threadId, body }),
+  });
+}
+
+export function createMessageThread(input: {
+  propertyId: string;
+  subject: string;
+  body: string;
+  workOrderId?: string | null;
+}) {
+  return api<{ thread: MessageThread; message: Message }>("/api/messages", {
+    method: "POST",
+    body: JSON.stringify({ action: "create", ...input }),
+  });
+}
+
+export function ledgerSourceLabel(source: LedgerEntry["source"]) {
+  if (source === "verified") return "Bank-verified";
+  if (source === "manual") return "Manual entry · not bank-verified";
+  return "Illustrative · not bank-verified";
+}
+
+export function previewIntake(answers: IntakeAnswers) {
+  return api<{
+    classification: IntakeClassification;
+    trace: { step: string; detail: string }[];
+    hardRule: string;
+  }>("/api/intake", {
+    method: "PUT",
+    body: JSON.stringify({ answers }),
+  });
+}
+
+export function submitIntake(input: {
+  propertyId: string;
+  answers: IntakeAnswers;
+}) {
+  return api<{
+    workOrder: WorkOrder;
+    audit: IntakeAudit;
+    classification?: IntakeClassification;
+  }>("/api/intake", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchIntakeAudit(params: {
+  auditId?: string;
+  workOrderId?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params.auditId) q.set("auditId", params.auditId);
+  if (params.workOrderId) q.set("workOrderId", params.workOrderId);
+  return api<{ audit: IntakeAudit | null; audits?: IntakeAudit[] }>(
+    `/api/intake?${q.toString()}`,
+  );
+}
+
+export function fetchPolicies(propertyId: string) {
+  return api<{
+    policy: AutomationPolicy;
+    vendors: Vendor[];
+    preferredVendors: Vendor[];
+    people: { id: string; name: string; role: Role }[];
+    canEdit: boolean;
+    hardRule: string;
+  }>(`/api/policies?propertyId=${encodeURIComponent(propertyId)}`);
+}
+
+export function patchPolicy(
+  propertyId: string,
+  patch: Partial<AutomationPolicy>,
+) {
+  return api<{ policy: AutomationPolicy; hardRule: string }>("/api/policies", {
+    method: "PATCH",
+    body: JSON.stringify({ propertyId, patch }),
+  });
+}
+
+export function fetchPayments() {
+  return api<{
+    payments: PaymentRef[];
+    autopay: AutopayEnrollment[];
+    mode: "demo" | "stripe";
+    stripeConfigured: boolean;
+  }>("/api/payments");
+}
+
+export function startRentCheckout(input: {
+  propertyId: string;
+  month: string;
+  amountCents: number;
+  origin?: string;
+}) {
+  return api<{
+    mode: "demo" | "stripe";
+    paymentId: string;
+    url: string | null;
+    sessionId?: string;
+    label?: string;
+  }>("/api/payments", {
+    method: "POST",
+    body: JSON.stringify({ action: "checkout", ...input }),
+  });
+}
+
+export function completeDemoCheckout(paymentId: string) {
+  return api<{
+    payment: PaymentRef;
+    mode: string;
+    label: string;
+  }>("/api/payments", {
+    method: "POST",
+    body: JSON.stringify({ action: "demo_complete", paymentId }),
+  });
+}
+
+export function setAutopayEnrollment(input: {
+  propertyId: string;
+  enabled: boolean;
+  dayOfMonth?: number;
+}) {
+  return api<{ enrollment: AutopayEnrollment; note: string }>("/api/payments", {
+    method: "POST",
+    body: JSON.stringify({ action: "autopay", ...input }),
+  });
+}
+
+export function askFaq(text: string) {
+  return api<{
+    kind: "faq" | "escalated" | "unmatched";
+    faq: VerifiedFaq | null;
+    reply: string;
+    reasons: string[];
+  }>("/api/comms/faq", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function fetchVerifiedFaqs() {
+  return api<{ faqs: VerifiedFaq[] }>("/api/comms/faq");
 }
