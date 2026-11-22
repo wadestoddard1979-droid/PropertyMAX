@@ -129,8 +129,60 @@ export type WorkOrder = {
   ownerDecision: "pending" | "approved" | "declined" | "asked" | null;
   ownerNote: string | null;
   requiresOwnerApproval: boolean;
+  /** Optional link to AI/rule intake classification audit. */
+  intakeAuditId?: string | null;
+  emergencyFlag?: boolean;
   createdAt: string;
   updatedAt: string;
+};
+
+/** Answers collected during conversational maintenance intake. */
+export type IntakeAnswers = {
+  summary: string;
+  location: string;
+  flooding: "yes" | "no" | "unsure";
+  waterShutoffKnown: "yes" | "no" | "na";
+  electricityHazard: "yes" | "no" | "unsure";
+  smellGas: "yes" | "no";
+  canUseHome: "yes" | "partially" | "no";
+  photoNotes: string;
+  freeText: string;
+};
+
+export type IntakeCategory =
+  | "Plumbing"
+  | "Electrical"
+  | "HVAC"
+  | "Appliance"
+  | "Structural"
+  | "Pest"
+  | "General";
+
+/** Classification is advisory only — never authorizes spend. */
+export type IntakeClassification = {
+  category: IntakeCategory;
+  urgency: Urgency;
+  emergency: boolean;
+  confidence: number;
+  rationale: string[];
+  recommendedNextStep: string;
+  /** Always false — hard product rule. */
+  spendAuthorized: false;
+  /** Optional suggested range for humans; never applied automatically. */
+  suggestedEstimateBandCents: { min: number; max: number } | null;
+  engine: "rules" | "llm+rules";
+};
+
+export type IntakeAudit = {
+  id: string;
+  propertyId: string;
+  workOrderId: string | null;
+  actorUserId: string;
+  answers: IntakeAnswers;
+  classification: IntakeClassification;
+  /** Trace of decision steps for managers/owners. */
+  trace: { step: string; detail: string }[];
+  createdAt: string;
 };
 
 export type ActivityEvent = {
@@ -200,7 +252,7 @@ export type ProjectionAssumptions = {
 };
 
 export type AppStore = {
-  version: 3;
+  version: 4;
   /** Domain snapshot — persisted to Supabase Postgres when configured, else local JSON. */
   seededAt: string;
   users: User[];
@@ -216,6 +268,7 @@ export type AppStore = {
   notifications: Notification[];
   ledger: LedgerEntry[];
   projectionAssumptions: ProjectionAssumptions[];
+  intakeAudits: IntakeAudit[];
 };
 
 export type SessionUser = {

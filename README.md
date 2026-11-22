@@ -76,7 +76,11 @@ Records · Documents/Activity · Messages · Maintenance workflow · Owner finan
 - Storage adapter for documents
 - Durable job queue abstraction (DB or local file)
 
-**Not in this PR:** AI maintenance intake (later Phase 2 work).
+## AI maintenance intake
+
+Tenant/manager **Request Repair** opens a guided conversational intake (flooding, location, shutoff, hazards, photos). A rule-based classifier (optional LLM via `AI_INTAKE_LLM=true`) sets category/urgency/emergency flags and writes an audit trace. **Hard rule:** classification never authorizes spend — estimates and owner approval stay on the existing human/policy workflow.
+
+**Not in this branch:** spending-policy UI / preferred vendor network (later Phase 2).
 
 ## Approval policy
 

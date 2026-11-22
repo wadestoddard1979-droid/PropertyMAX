@@ -1,6 +1,9 @@
 import type {
   ActivityEvent,
   DocumentRecord,
+  IntakeAnswers,
+  IntakeAudit,
+  IntakeClassification,
   LedgerEntry,
   Lease,
   Message,
@@ -319,4 +322,41 @@ export function ledgerSourceLabel(source: LedgerEntry["source"]) {
   if (source === "verified") return "Bank-verified";
   if (source === "manual") return "Manual entry · not bank-verified";
   return "Illustrative · not bank-verified";
+}
+
+export function previewIntake(answers: IntakeAnswers) {
+  return api<{
+    classification: IntakeClassification;
+    trace: { step: string; detail: string }[];
+    hardRule: string;
+  }>("/api/intake", {
+    method: "PUT",
+    body: JSON.stringify({ answers }),
+  });
+}
+
+export function submitIntake(input: {
+  propertyId: string;
+  answers: IntakeAnswers;
+}) {
+  return api<{
+    workOrder: WorkOrder;
+    audit: IntakeAudit;
+    classification?: IntakeClassification;
+  }>("/api/intake", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function fetchIntakeAudit(params: {
+  auditId?: string;
+  workOrderId?: string;
+}) {
+  const q = new URLSearchParams();
+  if (params.auditId) q.set("auditId", params.auditId);
+  if (params.workOrderId) q.set("workOrderId", params.workOrderId);
+  return api<{ audit: IntakeAudit | null; audits?: IntakeAudit[] }>(
+    `/api/intake?${q.toString()}`,
+  );
 }

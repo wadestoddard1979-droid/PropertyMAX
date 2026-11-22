@@ -261,7 +261,7 @@ export function createSeedStore(): AppStore {
   const now = new Date().toISOString();
   const { threads, messages } = mapleMessages(now);
   return {
-    version: 3,
+    version: 4,
     seededAt: now,
     users: [
       {
@@ -419,5 +419,6 @@ export function createSeedStore(): AppStore {
     ],
     ledger: novemberLedger(now),
     projectionAssumptions: [defaultAssumptions("prop-maple")],
+    intakeAudits: [],
   };
 }

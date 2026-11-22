@@ -47,6 +47,7 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     messages,
     notifications,
     activity,
+    intakeAudits,
   ] = await Promise.all([
     sb.from("profiles").select("*"),
     sb.from("properties").select("*"),
@@ -64,6 +65,7 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     sb.from("messages").select("*"),
     sb.from("notifications").select("*"),
     sb.from("activity_events").select("*"),
+    sb.from("intake_audits").select("*"),
   ]);
 
   const errors = [
@@ -89,6 +91,8 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
       `Supabase hydrate failed: ${errors.map((e) => e!.message).join("; ")}`,
     );
   }
+  // intake_audits may be missing until migration applied
+  const intakeRows = intakeAudits.error ? [] : intakeAudits.data || [];
 
   if (!profiles.data?.length || !properties.data?.length) {
     // Empty project — seed once
@@ -222,12 +226,14 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     ownerDecision: w.owner_decision,
     ownerNote: w.owner_note,
     requiresOwnerApproval: w.requires_owner_approval,
+    intakeAuditId: w.intake_audit_id ?? null,
+    emergencyFlag: Boolean(w.emergency_flag),
     createdAt: w.created_at,
     updatedAt: w.updated_at,
   }));
 
   return {
-    version: 3,
+    version: 4,
     seededAt: new Date().toISOString(),
     users,
     properties: props,
@@ -288,6 +294,16 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
       renovationRentUpliftCents: a.renovation_rent_uplift_cents,
       vacancyMonthsOnTurnover: Number(a.vacancy_months_on_turnover),
     })),
+    intakeAudits: intakeRows.map((a) => ({
+      id: a.id,
+      propertyId: a.property_id,
+      workOrderId: a.work_order_id,
+      actorUserId: a.actor_user_id,
+      answers: a.answers,
+      classification: a.classification,
+      trace: a.trace || [],
+      createdAt: a.created_at,
+    })),
   };
 }
 
@@ -300,6 +316,7 @@ async function clearPilotTables() {
     () => sb.from("message_threads").delete().neq("id", ""),
     () => sb.from("notifications").delete().neq("id", ""),
     () => sb.from("activity_events").delete().neq("id", ""),
+    () => sb.from("intake_audits").delete().neq("id", ""),
     () => sb.from("documents").delete().neq("id", ""),
     () => sb.from("ledger_entries").delete().neq("id", ""),
     () => sb.from("payment_refs").delete().neq("id", ""),
@@ -462,8 +479,26 @@ export async function persistStoreToSupabase(store: AppStore): Promise<void> {
         owner_decision: w.ownerDecision,
         owner_note: w.ownerNote,
         requires_owner_approval: w.requiresOwnerApproval,
+        intake_audit_id: w.intakeAuditId ?? null,
+        emergency_flag: Boolean(w.emergencyFlag),
         created_at: w.createdAt,
         updated_at: w.updatedAt,
+      })),
+    );
+    if (error) throw error;
+  }
+
+  if (store.intakeAudits?.length) {
+    const { error } = await sb.from("intake_audits").upsert(
+      store.intakeAudits.map((a) => ({
+        id: a.id,
+        property_id: a.propertyId,
+        work_order_id: a.workOrderId,
+        actor_user_id: a.actorUserId,
+        answers: a.answers,
+        classification: a.classification,
+        trace: a.trace,
+        created_at: a.createdAt,
       })),
     );
     if (error) throw error;

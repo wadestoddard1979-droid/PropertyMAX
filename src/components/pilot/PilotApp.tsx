@@ -8,9 +8,9 @@ import {
   type ReactNode,
 } from "react";
 import {
-  createWorkOrder,
   drainPilotJobs,
   enqueuePilotJob,
+  fetchIntakeAudit,
   fetchMe,
   fetchNotifications,
   fetchSystemStatus,
@@ -24,10 +24,10 @@ import {
 } from "@/lib/api-client";
 import type {
   ActivityEvent,
+  IntakeAudit,
   Notification,
   Property,
   SessionUser,
-  Urgency,
   Vendor,
   WorkOrder,
 } from "@/lib/types";
@@ -37,6 +37,7 @@ import OwnerFinancials from "@/components/pilot/OwnerFinancials";
 import PropertyRecords from "@/components/pilot/PropertyRecords";
 import DocumentsActivity from "@/components/pilot/DocumentsActivity";
 import MessagesPanel from "@/components/pilot/MessagesPanel";
+import MaintenanceIntake from "@/components/pilot/MaintenanceIntake";
 
 type Toast = string | null;
 type PilotView =
@@ -184,7 +185,7 @@ export default function PilotApp() {
               PropertMax
             </p>
             <p className="truncate text-xs text-white/55">
-              Phase 2 foundation · {persistence} · {authMode}
+              Phase 2 · AI intake · {persistence}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -312,14 +313,14 @@ export default function PilotApp() {
         )}
 
         {view === "new" && property && (
-          <NewRequest
+          <MaintenanceIntake
             property={property}
             onCancel={() => setView("home")}
             onCreated={async (id) => {
               await refresh();
               setSelectedId(id);
               setView("detail");
-              setToast("Work order created");
+              setToast("Intake classified · work order created (no spend authorized)");
             }}
           />
         )}
@@ -613,7 +614,7 @@ function RoleHome({
           >
             <p className="display text-lg font-semibold">Request Repair</p>
             <p className="mt-1 text-sm text-white/85">
-              Creates a durable work order
+              Guided AI intake → structured work order
             </p>
           </button>
           <button
@@ -711,126 +712,6 @@ function RoleHome({
   );
 }
 
-function NewRequest({
-  property,
-  onCancel,
-  onCreated,
-}: {
-  property: Property;
-  onCancel: () => void;
-  onCreated: (id: string) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [details, setDetails] = useState("");
-  const [urgency, setUrgency] = useState<Urgency>("routine");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const prompts = [
-    {
-      title: "Bathroom exhaust fan rattling",
-      details:
-        "The bathroom fan makes a loud rattle when turned on. Started this week. Not an emergency.",
-      urgency: "routine" as Urgency,
-      category: "Electrical",
-    },
-    {
-      title: "Kitchen sink dripping again",
-      details: "Drip under spout after faucet was previously marked fixed.",
-      urgency: "soon" as Urgency,
-      category: "Plumbing",
-    },
-  ];
-
-  async function submit() {
-    setBusy(true);
-    setErr(null);
-    try {
-      const { workOrder } = await createWorkOrder({
-        propertyId: property.id,
-        title,
-        details,
-        urgency,
-        category: title.toLowerCase().includes("fan")
-          ? "Electrical"
-          : "Plumbing",
-      });
-      onCreated(workOrder.id);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fade-in space-y-5">
-      <button
-        type="button"
-        className="text-sm font-medium text-[var(--accent)]"
-        onClick={onCancel}
-      >
-        ← Back
-      </button>
-      <h1 className="display text-3xl font-semibold">Request a repair</h1>
-      <div className="panel space-y-4 p-5">
-        <div className="flex flex-wrap gap-2">
-          {prompts.map((p) => (
-            <button
-              key={p.title}
-              type="button"
-              className="rounded-full border border-[var(--line-strong)] bg-white px-3 py-1.5 text-xs font-medium"
-              onClick={() => {
-                setTitle(p.title);
-                setDetails(p.details);
-                setUrgency(p.urgency);
-              }}
-            >
-              {p.title}
-            </button>
-          ))}
-        </div>
-        <input
-          className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
-          placeholder="Short title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-        <textarea
-          className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]"
-          rows={4}
-          placeholder="Details"
-          value={details}
-          onChange={(e) => setDetails(e.target.value)}
-        />
-        <div className="grid grid-cols-3 gap-2">
-          {(["routine", "soon", "urgent"] as Urgency[]).map((u) => (
-            <button
-              key={u}
-              type="button"
-              onClick={() => setUrgency(u)}
-              className={`rounded-xl border px-3 py-2 text-sm font-medium capitalize ${
-                urgency === u
-                  ? "border-[var(--accent)] bg-[var(--accent-soft)]"
-                  : "border-[var(--line)]"
-              }`}
-            >
-              {u}
-            </button>
-          ))}
-        </div>
-        {err && <p className="text-sm text-[var(--danger)]">{err}</p>}
-        <Button
-          disabled={busy || title.trim().length < 3 || details.trim().length < 4}
-          onClick={submit}
-        >
-          Submit work order
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function WorkOrderDetail({
   user,
   property,
@@ -861,6 +742,17 @@ function WorkOrderDetail({
   const [vendorId, setVendorId] = useState(vendors[0]?.id || "");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [intakeAudit, setIntakeAudit] = useState<IntakeAudit | null>(null);
+
+  useEffect(() => {
+    if (!workOrder.intakeAuditId && !workOrder.id) return;
+    fetchIntakeAudit({
+      auditId: workOrder.intakeAuditId || undefined,
+      workOrderId: workOrder.id,
+    })
+      .then((res) => setIntakeAudit(res.audit))
+      .catch(() => setIntakeAudit(null));
+  }, [workOrder.id, workOrder.intakeAuditId]);
 
   async function run(action: () => Promise<void>, okMsg: string) {
     setBusy(true);
@@ -897,6 +789,9 @@ function WorkOrderDetail({
           <Button variant="secondary" onClick={onOpenMessages}>
             Open message thread
           </Button>
+          {workOrder.emergencyFlag && (
+            <StatusChip tone="warn">Emergency flag</StatusChip>
+          )}
           <StatusChip
             tone={
               workOrder.status === "awaiting_owner_approval" ? "warn" : "accent"
@@ -906,6 +801,33 @@ function WorkOrderDetail({
           </StatusChip>
         </div>
       </header>
+
+      {intakeAudit && (
+        <section className="panel space-y-3 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionLabel>Intake classification audit</SectionLabel>
+            <StatusChip tone="warn">
+              spendAuthorized = {String(intakeAudit.classification.spendAuthorized)}
+            </StatusChip>
+          </div>
+          <p className="text-sm text-[var(--ink-soft)]">
+            {intakeAudit.classification.category} ·{" "}
+            {intakeAudit.classification.urgency} ·{" "}
+            {intakeAudit.classification.engine} ·{" "}
+            {Math.round(intakeAudit.classification.confidence * 100)}% confidence
+          </p>
+          <ol className="space-y-2 text-sm">
+            {intakeAudit.trace.map((t, i) => (
+              <li key={`${t.step}-${i}`}>
+                <span className="font-semibold text-[var(--muted)]">
+                  {t.step}:
+                </span>{" "}
+                {t.detail}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <section className="panel space-y-4 p-5">

@@ -27,6 +27,11 @@ function migrateStore(store: AppStore): AppStore {
   if (!store.documents) store.documents = [];
   if (!store.messageThreads) store.messageThreads = [];
   if (!store.messages) store.messages = [];
+  if (!store.intakeAudits) store.intakeAudits = [];
+  for (const w of store.workOrders || []) {
+    if (w.intakeAuditId === undefined) w.intakeAuditId = null;
+    if (w.emergencyFlag === undefined) w.emergencyFlag = false;
+  }
 
   for (const p of store.properties || []) {
     if (!store.projectionAssumptions.some((a) => a.propertyId === p.id)) {
@@ -61,7 +66,7 @@ function migrateStore(store: AppStore): AppStore {
     }
   }
 
-  store.version = 3;
+  store.version = 4;
   return store;
 }
 
