@@ -1,5 +1,6 @@
 import type {
   ActivityEvent,
+  AssetRecord,
   AutopayEnrollment,
   AutomationPolicy,
   DocumentRecord,
@@ -11,11 +12,16 @@ import type {
   Message,
   MessageThread,
   Notification,
+  OwnerStatement,
   PaymentRef,
   ProjectionAssumptions,
   Property,
+  RenovationChangeOrder,
+  RenovationProject,
   Role,
   SessionUser,
+  TurnoverChecklist,
+  TurnoverChecklistItem,
   Unit,
   Urgency,
   Vendor,
@@ -449,4 +455,129 @@ export function askFaq(text: string) {
 
 export function fetchVerifiedFaqs() {
   return api<{ faqs: VerifiedFaq[] }>("/api/comms/faq");
+}
+
+export function fetchReports(propertyId: string) {
+  return api<{
+    property: Property;
+    statements: OwnerStatement[];
+    summary: {
+      byMonth: Record<
+        string,
+        { expensesCents: number; maintenanceCents: number; rentCents: number }
+      >;
+      workOrders: WorkOrder[];
+      entryCount: number;
+    };
+    months: string[];
+  }>(`/api/reports?propertyId=${encodeURIComponent(propertyId)}`);
+}
+
+export function generateOwnerStatement(input: {
+  propertyId: string;
+  month: string;
+  viaJob?: boolean;
+}) {
+  return api<{ statement: OwnerStatement; job?: { id: string } }>(
+    "/api/reports",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action: input.viaJob ? "enqueue_monthly" : "generate",
+        propertyId: input.propertyId,
+        month: input.month,
+      }),
+    },
+  );
+}
+
+export function fetchRenovation(propertyId: string) {
+  return api<{
+    property: Property;
+    projects: RenovationProject[];
+    turnovers: TurnoverChecklist[];
+    assets: AssetRecord[];
+    vacancyInsight: {
+      vacancyMonths: number;
+      lostRentCents: number;
+      carryingCostCents: number;
+      totalVacancyCostCents: number;
+      label: string;
+    };
+    canDrive: boolean;
+    role: Role;
+  }>(`/api/renovation?propertyId=${encodeURIComponent(propertyId)}`);
+}
+
+export function decideRenoProject(
+  projectId: string,
+  decision: "approved" | "declined",
+  note?: string,
+) {
+  return api<{ project: RenovationProject }>("/api/renovation", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "decide_project",
+      projectId,
+      decision,
+      note,
+    }),
+  });
+}
+
+export function postRenoProgress(
+  projectId: string,
+  patch: {
+    status?: RenovationProject["status"];
+    spentCents?: number;
+    progressPct?: number;
+  },
+) {
+  return api<{ project: RenovationProject }>("/api/renovation", {
+    method: "POST",
+    body: JSON.stringify({ action: "progress", projectId, ...patch }),
+  });
+}
+
+export function proposeChangeOrder(
+  projectId: string,
+  input: { title: string; amountCents: number; note?: string },
+) {
+  return api<{ changeOrder: RenovationChangeOrder }>("/api/renovation", {
+    method: "POST",
+    body: JSON.stringify({ action: "change_order", projectId, ...input }),
+  });
+}
+
+export function decideChangeOrder(
+  projectId: string,
+  changeOrderId: string,
+  decision: "approved" | "declined",
+) {
+  return api<{
+    project: RenovationProject;
+    changeOrder: RenovationChangeOrder;
+  }>("/api/renovation", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "decide_change_order",
+      projectId,
+      changeOrderId,
+      decision,
+    }),
+  });
+}
+
+export function patchTurnoverItem(
+  checklistId: string,
+  items: TurnoverChecklistItem[],
+) {
+  return api<{ checklist: TurnoverChecklist }>("/api/renovation", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "patch_turnover",
+      checklistId,
+      items,
+    }),
+  });
 }

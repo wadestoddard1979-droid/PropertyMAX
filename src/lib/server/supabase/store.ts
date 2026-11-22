@@ -249,7 +249,7 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
   const autopayRows = autopayRes.error ? [] : autopayRes.data || [];
 
   return {
-    version: 6,
+    version: 7,
     seededAt: new Date().toISOString(),
     users,
     properties: props,
@@ -373,6 +373,10 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
       updatedAt: a.updated_at,
     })),
     verifiedFaqs: [],
+    ownerStatements: [],
+    renovationProjects: [],
+    turnoverChecklists: [],
+    assets: [],
   };
 }
 

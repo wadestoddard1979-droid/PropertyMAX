@@ -40,6 +40,7 @@ import MessagesPanel from "@/components/pilot/MessagesPanel";
 import MaintenanceIntake from "@/components/pilot/MaintenanceIntake";
 import PolicyVendors from "@/components/pilot/PolicyVendors";
 import TenantPayments from "@/components/pilot/TenantPayments";
+import OwnerReportsReno from "@/components/pilot/OwnerReportsReno";
 
 type Toast = string | null;
 type PilotView =
@@ -51,7 +52,8 @@ type PilotView =
   | "documents"
   | "messages"
   | "policies"
-  | "payments";
+  | "payments"
+  | "reports";
 
 export default function PilotApp() {
   const [loading, setLoading] = useState(true);
@@ -215,6 +217,11 @@ export default function PilotApp() {
                 Financials
               </NavChip>
             )}
+            {(user.role === "owner" || user.role === "manager") && (
+              <NavChip onClick={() => setView("reports")}>
+                Reports / Reno
+              </NavChip>
+            )}
             <StatusChip tone="accent">
               {user.role} · {user.name}
             </StatusChip>
@@ -276,10 +283,23 @@ export default function PilotApp() {
             }}
             onPolicies={() => setView("policies")}
             onPayments={() => setView("payments")}
+            onReports={() => setView("reports")}
             onToast={setToast}
             onError={setError}
           />
         )}
+
+        {view === "reports" &&
+          property &&
+          (user.role === "owner" || user.role === "manager") && (
+            <OwnerReportsReno
+              user={user}
+              propertyId={property.id}
+              onBack={() => setView("home")}
+              onToast={setToast}
+              onError={setError}
+            />
+          )}
 
         {view === "payments" && property && user.role === "tenant" && (
           <TenantPayments
@@ -484,6 +504,7 @@ function RoleHome({
   onMessages,
   onPolicies,
   onPayments,
+  onReports,
   onToast,
   onError,
 }: {
@@ -503,6 +524,7 @@ function RoleHome({
   onMessages: () => void;
   onPolicies: () => void;
   onPayments: () => void;
+  onReports: () => void;
   onToast: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -565,6 +587,11 @@ function RoleHome({
           )}
           {(user.role === "owner" || user.role === "manager") && (
             <Button onClick={onFinancials}>Open financials</Button>
+          )}
+          {(user.role === "owner" || user.role === "manager") && (
+            <Button variant="secondary" onClick={onReports}>
+              Reports / reno
+            </Button>
           )}
           {(user.role === "tenant" || user.role === "manager") && (
             <Button onClick={onNew}>Request repair</Button>

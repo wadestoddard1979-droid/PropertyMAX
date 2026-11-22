@@ -312,8 +312,122 @@ export type VerifiedFaq = {
   sourceDocId: string | null;
 };
 
+/** Generated monthly owner statement (ledger + maintenance rollup). */
+export type OwnerStatement = {
+  id: string;
+  propertyId: string;
+  month: string;
+  generatedAt: string;
+  generatedByUserId: string;
+  rentCollectedCents: number;
+  operatingExpensesCents: number;
+  maintenanceCents: number;
+  mortgageCents: number;
+  noiCents: number;
+  cashFlowCents: number;
+  renovationCents: number;
+  workOrderCount: number;
+  workOrderIds: string[];
+  expenseByCategory: Record<string, number>;
+  notes: string;
+};
+
+export type RenoStatus =
+  | "draft"
+  | "proposed"
+  | "awaiting_owner_approval"
+  | "approved"
+  | "in_progress"
+  | "completed"
+  | "canceled";
+
+export type RenovationChangeOrder = {
+  id: string;
+  title: string;
+  amountCents: number;
+  status: "proposed" | "approved" | "declined";
+  note: string;
+  createdAt: string;
+  decidedAt: string | null;
+};
+
+export type RenovationMilestone = {
+  id: string;
+  title: string;
+  status: "pending" | "in_progress" | "done";
+  percent: number;
+  updatedAt: string;
+};
+
+export type RenovationProject = {
+  id: string;
+  propertyId: string;
+  unitId: string | null;
+  title: string;
+  scope: string;
+  budgetCents: number;
+  spentCents: number;
+  status: RenoStatus;
+  ownerDecision: "pending" | "approved" | "declined" | null;
+  ownerNote: string | null;
+  managerUserId: string;
+  vendorId: string | null;
+  milestones: RenovationMilestone[];
+  changeOrders: RenovationChangeOrder[];
+  progressPct: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TurnoverChecklistItem = {
+  id: string;
+  label: string;
+  done: boolean;
+  note: string | null;
+};
+
+export type TurnoverChecklist = {
+  id: string;
+  propertyId: string;
+  unitId: string | null;
+  leaseId: string | null;
+  title: string;
+  moveOutDate: string;
+  status: "open" | "in_progress" | "ready" | "completed";
+  items: TurnoverChecklistItem[];
+  vacancyMonthsAssumed: number;
+  vacancyCostCents: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AssetCategory =
+  | "hvac"
+  | "water_heater"
+  | "appliance"
+  | "roof"
+  | "plumbing"
+  | "electrical"
+  | "other";
+
+export type AssetRecord = {
+  id: string;
+  propertyId: string;
+  unitId: string | null;
+  category: AssetCategory;
+  name: string;
+  makeModel: string | null;
+  serialNumber: string | null;
+  installedAt: string | null;
+  warrantyEndsAt: string | null;
+  expectedLifeYears: number | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AppStore = {
-  version: 6;
+  version: 7;
   /** Domain snapshot — persisted to Supabase Postgres when configured, else local JSON. */
   seededAt: string;
   users: User[];
@@ -334,6 +448,10 @@ export type AppStore = {
   paymentRefs: PaymentRef[];
   autopayEnrollments: AutopayEnrollment[];
   verifiedFaqs: VerifiedFaq[];
+  ownerStatements: OwnerStatement[];
+  renovationProjects: RenovationProject[];
+  turnoverChecklists: TurnoverChecklist[];
+  assets: AssetRecord[];
 };
 
 export type SessionUser = {

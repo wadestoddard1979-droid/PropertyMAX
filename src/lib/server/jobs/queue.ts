@@ -11,6 +11,7 @@ export type JobKind =
   | "webhook.payment"
   | "comms.request_ack"
   | "comms.status_update"
+  | "report.owner_statement"
   | "notify.digest"
   | "document.scan";
 
@@ -45,10 +46,18 @@ let handlersBootstrapped = false;
 async function ensureHandlers() {
   if (handlersBootstrapped) return;
   handlersBootstrapped = true;
-  const [{ registerCommsHandlers }, { registerPaymentJobHandlers }] =
-    await Promise.all([import("../comms"), import("../payments-jobs")]);
+  const [
+    { registerCommsHandlers },
+    { registerPaymentJobHandlers },
+    { registerReportJobHandlers },
+  ] = await Promise.all([
+    import("../comms"),
+    import("../payments-jobs"),
+    import("../reports"),
+  ]);
   registerCommsHandlers();
   registerPaymentJobHandlers();
+  registerReportJobHandlers();
 }
 
 async function readLocal(): Promise<JobRecord[]> {

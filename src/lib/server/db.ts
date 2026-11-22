@@ -10,6 +10,7 @@ import {
   loadStoreFromSupabase,
   persistStoreToSupabase,
 } from "./supabase/store";
+import { seedMapleRenoBundle } from "./renovation";
 import type { AppStore } from "../types";
 
 /**
@@ -38,6 +39,10 @@ function migrateStore(store: AppStore): AppStore {
   if (!store.verifiedFaqs || store.verifiedFaqs.length === 0) {
     store.verifiedFaqs = [...DEFAULT_VERIFIED_FAQS];
   }
+  if (!store.ownerStatements) store.ownerStatements = [];
+  if (!store.renovationProjects) store.renovationProjects = [];
+  if (!store.turnoverChecklists) store.turnoverChecklists = [];
+  if (!store.assets) store.assets = [];
   for (const w of store.workOrders || []) {
     if (w.intakeAuditId === undefined) w.intakeAuditId = null;
     if (w.emergencyFlag === undefined) w.emergencyFlag = false;
@@ -96,7 +101,8 @@ function migrateStore(store: AppStore): AppStore {
     }
   }
 
-  store.version = 6;
+  seedMapleRenoBundle(store);
+  store.version = 7;
   return store;
 }
 
@@ -106,7 +112,7 @@ async function ensureJsonStore(): Promise<AppStore> {
     const raw = await fs.readFile(STORE_PATH, "utf8");
     return migrateStore(JSON.parse(raw) as AppStore);
   } catch {
-    const seeded = createSeedStore();
+    const seeded = migrateStore(createSeedStore());
     await fs.writeFile(STORE_PATH, JSON.stringify(seeded, null, 2), "utf8");
     return seeded;
   }
