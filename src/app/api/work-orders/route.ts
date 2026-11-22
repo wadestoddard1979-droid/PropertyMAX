@@ -1,5 +1,6 @@
 import { AuthError, jsonError, requireSession } from "@/lib/server/auth";
 import { readStore, updateStore } from "@/lib/server/db";
+import { activityVisibleTo } from "@/lib/server/records";
 import {
   createWorkOrder,
   workOrdersVisibleTo,
@@ -14,9 +15,7 @@ export async function GET() {
     return Response.json({
       workOrders,
       vendors: store.vendors,
-      activity: store.activity.filter((a) =>
-        workOrders.some((w) => w.id === a.workOrderId),
-      ),
+      activity: activityVisibleTo(store, session),
     });
   } catch (err) {
     return jsonError(err);

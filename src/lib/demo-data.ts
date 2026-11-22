@@ -27,7 +27,7 @@ export const PROPERTY = {
   estimatedCashFlow: 425,
   ownerName: "Alex Rivera",
   managerName: "Sam Chen",
-  managerCompany: "Beachy Property Partners",
+  managerCompany: "PropertMax Property Partners",
 } as const;
 
 export const CASH_FLOW = {

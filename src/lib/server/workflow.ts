@@ -8,6 +8,12 @@ import type {
   WorkOrder,
 } from "../types";
 import { formatMoneyFromCents } from "./db";
+import {
+  evaluateSpendDecision,
+  getPolicyForProperty,
+  reasonLabel,
+} from "./policies";
+import { enqueueJob } from "./jobs/queue";
 
 function now() {
   return new Date().toISOString();
@@ -102,6 +108,8 @@ export function createWorkOrder(
     ownerDecision: null,
     ownerNote: null,
     requiresOwnerApproval: false,
+    intakeAuditId: null,
+    emergencyFlag: false,
     createdAt: now(),
     updatedAt: now(),
   };
@@ -129,6 +137,109 @@ export function createWorkOrder(
     kind: "work_order.auto_triage",
     message: "System placed request under review for manager triage.",
   });
+  void enqueueJob("comms.request_ack", {
+    workOrderId: wo.id,
+    propertyId: property.id,
+  }).catch(() => undefined);
+  return wo;
+}
+
+function applyEstimateWithPolicy(
+  store: AppStore,
+  actor: SessionUser,
+  wo: WorkOrder,
+  estimateCents: number,
+  estimateNotes: string,
+  vendorId: string | undefined,
+  source: "manager" | "vendor",
+) {
+  const property = propertyOrThrow(store, wo.propertyId);
+  const policy = getPolicyForProperty(store, property.id);
+  const decision = evaluateSpendDecision(
+    policy,
+    wo.category,
+    estimateCents,
+    property.ownerApprovalThresholdCents,
+  );
+
+  wo.estimateCents = estimateCents;
+  wo.estimateNotes = estimateNotes.trim() || null;
+  if (vendorId) {
+    const vendor = store.vendors.find((v) => v.id === vendorId);
+    if (!vendor) throw new Error("Vendor not found");
+    wo.vendorId = vendor.id;
+    if (!wo.contractorUserId) {
+      wo.contractorUserId = vendor.contractorUserId;
+    }
+  }
+  wo.policyDecisionReason = decision.reason;
+  wo.requiresOwnerApproval = decision.requiresOwnerApproval;
+  wo.updatedAt = now();
+
+  const who = source === "vendor" ? "Vendor quote" : "Estimate";
+
+  if (decision.requiresOwnerApproval) {
+    wo.status = "awaiting_owner_approval";
+    wo.ownerDecision = "pending";
+    const due = new Date(
+      Date.now() + Math.max(1, policy.maxWaitHours) * 3600_000,
+    ).toISOString();
+    wo.escalationDueAt = due;
+    pushActivity(store, {
+      workOrderId: wo.id,
+      propertyId: property.id,
+      actorUserId: actor.id,
+      kind: "work_order.estimate_added",
+      message: `${who} ${formatMoneyFromCents(estimateCents)} · policy: ${reasonLabel(decision.reason)} (threshold ${formatMoneyFromCents(decision.thresholdCents)}). AI cannot authorize spend.`,
+    });
+    notify(store, {
+      userId: property.ownerId,
+      workOrderId: wo.id,
+      title: "Approval needed",
+      body: `${wo.title} · ${formatMoneyFromCents(estimateCents)} — ${reasonLabel(decision.reason)}`,
+    });
+    notify(store, {
+      userId: wo.createdByUserId,
+      workOrderId: wo.id,
+      title: "Estimate ready",
+      body: "Awaiting owner approval per property policy.",
+    });
+    // Escalation timer job (durable queue)
+    void enqueueJob(
+      "approval.escalation",
+      {
+        workOrderId: wo.id,
+        propertyId: property.id,
+        escalationContactUserId:
+          policy.escalationContactUserId || property.managerId,
+      },
+      { runAfter: new Date(due) },
+    ).catch(() => undefined);
+  } else {
+    wo.status = "approved";
+    wo.ownerDecision = null;
+    wo.requiresOwnerApproval = false;
+    wo.escalationDueAt = null;
+    pushActivity(store, {
+      workOrderId: wo.id,
+      propertyId: property.id,
+      actorUserId: actor.id,
+      kind: "work_order.auto_approved",
+      message: `${who} ${formatMoneyFromCents(estimateCents)} · policy: ${reasonLabel(decision.reason)}. Ready for contractor assignment.`,
+    });
+    notify(store, {
+      userId: wo.createdByUserId,
+      workOrderId: wo.id,
+      title: "Approved for scheduling",
+      body: `${wo.title} cleared by policy (${reasonLabel(decision.reason)}).`,
+    });
+    notify(store, {
+      userId: property.managerId,
+      workOrderId: wo.id,
+      title: "Auto-cleared under policy",
+      body: `${formatMoneyFromCents(estimateCents)} · ${wo.category}`,
+    });
+  }
   return wo;
 }
 
@@ -142,63 +253,92 @@ export function addEstimate(
 ) {
   if (actor.role !== "manager") throw new Error("Only managers add estimates");
   const wo = workOrderOrThrow(store, workOrderId);
-  const property = assertPropertyAccess(store, actor, wo.propertyId);
+  assertPropertyAccess(store, actor, wo.propertyId);
   if (estimateCents < 0) throw new Error("Estimate must be >= 0");
+  return applyEstimateWithPolicy(
+    store,
+    actor,
+    wo,
+    estimateCents,
+    estimateNotes,
+    vendorId,
+    "manager",
+  );
+}
 
-  wo.estimateCents = estimateCents;
-  wo.estimateNotes = estimateNotes.trim() || null;
-  if (vendorId) {
-    const vendor = store.vendors.find((v) => v.id === vendorId);
-    if (!vendor) throw new Error("Vendor not found");
-    wo.vendorId = vendor.id;
+/** Manager requests a quote from a preferred (or any) vendor. */
+export function requestVendorEstimate(
+  store: AppStore,
+  actor: SessionUser,
+  workOrderId: string,
+  vendorId: string,
+) {
+  if (actor.role !== "manager") {
+    throw new Error("Only managers request vendor estimates");
   }
+  const wo = workOrderOrThrow(store, workOrderId);
+  const property = assertPropertyAccess(store, actor, wo.propertyId);
+  const policy = getPolicyForProperty(store, property.id);
+  const vendor = store.vendors.find((v) => v.id === vendorId);
+  if (!vendor) throw new Error("Vendor not found");
+
+  wo.vendorId = vendor.id;
+  wo.contractorUserId = vendor.contractorUserId;
+  wo.status = "awaiting_estimate";
+  wo.quoteRequestedAt = now();
+  wo.estimateCents = null;
+  wo.estimateNotes = null;
+  wo.policyDecisionReason = null;
   wo.updatedAt = now();
 
-  const over =
-    estimateCents > property.ownerApprovalThresholdCents;
-  wo.requiresOwnerApproval = over;
-
-  if (over) {
-    wo.status = "awaiting_owner_approval";
-    wo.ownerDecision = "pending";
-    pushActivity(store, {
-      workOrderId: wo.id,
-      propertyId: property.id,
-      actorUserId: actor.id,
-      kind: "work_order.estimate_added",
-      message: `Estimate ${formatMoneyFromCents(estimateCents)} exceeds ${formatMoneyFromCents(property.ownerApprovalThresholdCents)} threshold — owner approval required.`,
-    });
-    notify(store, {
-      userId: property.ownerId,
-      workOrderId: wo.id,
-      title: "Approval needed",
-      body: `${wo.title} · ${formatMoneyFromCents(estimateCents)} quote awaiting your decision.`,
-    });
-    notify(store, {
-      userId: wo.createdByUserId,
-      workOrderId: wo.id,
-      title: "Estimate ready",
-      body: "Your request is awaiting owner approval.",
-    });
-  } else {
-    wo.status = "approved";
-    wo.ownerDecision = null;
-    wo.requiresOwnerApproval = false;
-    pushActivity(store, {
-      workOrderId: wo.id,
-      propertyId: property.id,
-      actorUserId: actor.id,
-      kind: "work_order.auto_approved",
-      message: `Estimate ${formatMoneyFromCents(estimateCents)} is under threshold — auto-approved for scheduling.`,
-    });
-    notify(store, {
-      userId: wo.createdByUserId,
-      workOrderId: wo.id,
-      title: "Approved for scheduling",
-      body: `${wo.title} cleared under the $${property.ownerApprovalThresholdCents / 100} policy.`,
-    });
-  }
+  const preferred = policy.preferredVendorIds.includes(vendor.id);
+  pushActivity(store, {
+    workOrderId: wo.id,
+    propertyId: property.id,
+    actorUserId: actor.id,
+    kind: "work_order.quote_requested",
+    message: `Quote requested from ${vendor.name}${preferred ? " (preferred vendor)" : ""}.`,
+  });
+  notify(store, {
+    userId: vendor.contractorUserId,
+    workOrderId: wo.id,
+    title: "Estimate requested",
+    body: `${wo.title} · ${property.name} — please submit a quote.`,
+  });
   return wo;
+}
+
+/** Contractor submits a quote; policy decides owner routing. */
+export function submitVendorQuote(
+  store: AppStore,
+  actor: SessionUser,
+  workOrderId: string,
+  estimateCents: number,
+  estimateNotes: string,
+) {
+  if (actor.role !== "contractor" && actor.role !== "manager") {
+    throw new Error("Only contractor or manager can submit vendor quotes");
+  }
+  const wo = workOrderOrThrow(store, workOrderId);
+  if (actor.role === "contractor" && wo.contractorUserId !== actor.id) {
+    throw new Error("Not your assigned estimate request");
+  }
+  if (wo.status !== "awaiting_estimate" && actor.role === "contractor") {
+    throw new Error("Work order is not awaiting a vendor estimate");
+  }
+  if (estimateCents < 0) throw new Error("Estimate must be >= 0");
+  if (actor.role === "manager") {
+    assertPropertyAccess(store, actor, wo.propertyId);
+  }
+  return applyEstimateWithPolicy(
+    store,
+    actor,
+    wo,
+    estimateCents,
+    estimateNotes,
+    wo.vendorId || undefined,
+    "vendor",
+  );
 }
 
 export function ownerDecide(
@@ -364,6 +504,12 @@ export function contractorUpdateStatus(
       body: `${wo.title} · ${property.name}`,
     });
   }
+  void enqueueJob("comms.status_update", {
+    workOrderId: wo.id,
+    propertyId: property.id,
+    actorUserId: actor.id,
+    status,
+  }).catch(() => undefined);
   return wo;
 }
 

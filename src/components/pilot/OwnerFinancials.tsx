@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchFinancials,
+  ledgerSourceLabel,
   moneyFromCents,
   patchAssumptions,
   postLedgerEntry,
@@ -239,7 +240,18 @@ export default function OwnerFinancials({
                 <span>
                   <span className="font-medium">{e.label}</span>
                   <span className="mt-0.5 block text-xs capitalize text-[var(--muted)]">
-                    {e.category} · {e.source}
+                    {e.category}
+                  </span>
+                  <span
+                    className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[0.65rem] font-semibold ${
+                      e.source === "verified"
+                        ? "bg-[var(--positive-soft)] text-[var(--positive)]"
+                        : e.source === "manual"
+                          ? "bg-[var(--warn-soft)] text-[var(--warn)]"
+                          : "bg-[var(--accent-soft)] text-[var(--accent-deep)]"
+                    }`}
+                  >
+                    {ledgerSourceLabel(e.source)}
                   </span>
                 </span>
                 <span
@@ -252,7 +264,14 @@ export default function OwnerFinancials({
           </ul>
 
           <div className="mt-4 space-y-2 border-t border-[var(--line)] pt-4">
-            <p className="text-sm font-semibold">Add manual entry</p>
+            <p className="text-sm font-semibold">
+              Add manual rent / expense entry
+            </p>
+            <p className="rounded-xl bg-[var(--warn-soft)] px-3 py-2 text-xs text-[var(--warn)]">
+              Saved as <strong>manual · not bank-verified</strong>. Seed rows are
+              tagged <strong>illustrative</strong>. Phase 1 has no{" "}
+              <strong>verified</strong> bank sync yet.
+            </p>
             <div className="flex flex-wrap gap-2">
               <select
                 className="rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
@@ -278,12 +297,9 @@ export default function OwnerFinancials({
                 onChange={(e) => setEntryAmount(e.target.value)}
               />
               <Button disabled={busy} onClick={addManualEntry}>
-                Add
+                Add manual
               </Button>
             </div>
-            <p className="text-xs text-[var(--muted)]">
-              Manual entries are labeled as such — not bank-verified.
-            </p>
           </div>
         </section>
       </div>
@@ -488,7 +504,7 @@ export default function OwnerFinancials({
             </p>
           </div>
           <p className="text-xs leading-relaxed text-[var(--muted)]">
-            Beachy Renovations pilot context: pre-lease refresh is modeled as a
+            PropertMax pilot context: pre-lease refresh is modeled as a
             one-time spend with optional rent uplift. This is a planning aid —
             not an appraisal, and not a promise of appreciation or resale gain.
           </p>

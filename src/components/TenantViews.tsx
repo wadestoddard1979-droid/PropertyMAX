@@ -33,7 +33,7 @@ export function TenantHome() {
         />
         <ActionCard
           title="Message"
-          detail="Reach Beachy Property Partners"
+          detail="Reach PropertMax Property Partners"
           onClick={() => setTenantView("message")}
         />
       </div>
@@ -363,7 +363,7 @@ export function TenantMessage() {
       </header>
       <div className="fade-in-delay-1 panel space-y-3 p-5">
         <div className="rounded-2xl bg-[var(--surface-2)] px-4 py-3 text-sm">
-          <p className="font-semibold">Beachy Property Partners</p>
+          <p className="font-semibold">PropertMax Property Partners</p>
           <p className="mt-1 text-[var(--muted)]">
             Thanks for the faucet photos — we sent the quote to your owner for
             approval. We’ll update you when it’s scheduled.

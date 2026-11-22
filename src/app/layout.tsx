@@ -15,9 +15,9 @@ const display = Sora({
 });
 
 export const metadata: Metadata = {
-  title: "PropertMax — Phase 1 Pilot",
+  title: "PropertMax — Property management OS",
   description:
-    "Property management that practically runs itself — maintenance request, approval, and contractor workflow.",
+    "Property management that practically runs itself — maintenance request, approval, and contractor workflow. Beachy Renovations appears only as an optional white-label org theme.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
