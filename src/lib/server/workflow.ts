@@ -102,6 +102,8 @@ export function createWorkOrder(
     ownerDecision: null,
     ownerNote: null,
     requiresOwnerApproval: false,
+    intakeAuditId: null,
+    emergencyFlag: false,
     createdAt: now(),
     updatedAt: now(),
   };
