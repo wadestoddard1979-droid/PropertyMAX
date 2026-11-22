@@ -16,12 +16,46 @@ let writeChain: Promise<unknown> = Promise.resolve();
 function migrateStore(store: AppStore): AppStore {
   if (!store.ledger) store.ledger = [];
   if (!store.projectionAssumptions) store.projectionAssumptions = [];
+  if (!store.units) store.units = [];
+  if (!store.leases) store.leases = [];
+  if (!store.documents) store.documents = [];
+  if (!store.messageThreads) store.messageThreads = [];
+  if (!store.messages) store.messages = [];
+
   for (const p of store.properties || []) {
     if (!store.projectionAssumptions.some((a) => a.propertyId === p.id)) {
       store.projectionAssumptions.push(defaultAssumptions(p.id));
     }
+    if (!store.units.some((u) => u.propertyId === p.id)) {
+      store.units.push({
+        id: `unit-${p.id}`,
+        propertyId: p.id,
+        label: "Main unit",
+        beds: p.beds,
+        baths: p.baths,
+        sqft: p.sqft,
+        occupancy: p.occupancy,
+        monthlyRentCents: Math.round(p.monthlyRent * 100),
+      });
+    }
+    if (!store.leases.some((l) => l.propertyId === p.id)) {
+      const unit = store.units.find((u) => u.propertyId === p.id)!;
+      store.leases.push({
+        id: `lease-${p.id}`,
+        propertyId: p.id,
+        unitId: unit.id,
+        tenantIds: [...p.tenantIds],
+        startDate: "2026-09-01",
+        endDate: "2027-08-31",
+        monthlyRentCents: unit.monthlyRentCents,
+        depositCents: unit.monthlyRentCents,
+        status: p.occupancy === "Occupied" ? "active" : "ended",
+        notes: "Migrated from Phase 1 property fields.",
+      });
+    }
   }
-  store.version = 2;
+
+  store.version = 3;
   return store;
 }
 
