@@ -8,6 +8,7 @@ import type {
   ProjectionAssumptions,
   Unit,
 } from "../types";
+import { defaultPolicyForProperty } from "./policies";
 
 export function defaultAssumptions(propertyId: string): ProjectionAssumptions {
   return {
@@ -261,7 +262,7 @@ export function createSeedStore(): AppStore {
   const now = new Date().toISOString();
   const { threads, messages } = mapleMessages(now);
   return {
-    version: 4,
+    version: 5,
     seededAt: now,
     users: [
       {
@@ -420,5 +421,12 @@ export function createSeedStore(): AppStore {
     ledger: novemberLedger(now),
     projectionAssumptions: [defaultAssumptions("prop-maple")],
     intakeAudits: [],
+    automationPolicies: [
+      defaultPolicyForProperty("prop-maple", {
+        spendThresholdCents: 20000,
+        preferredVendorIds: ["vendor-beach-plumbing"],
+        escalationContactUserId: "user-manager",
+      }),
+    ],
   };
 }

@@ -7,6 +7,7 @@ import { getServiceClient } from "../supabase/client";
 export type JobKind =
   | "reminder.rent"
   | "reminder.lease_expiry"
+  | "approval.escalation"
   | "webhook.payment"
   | "notify.digest"
   | "document.scan";
@@ -212,4 +213,10 @@ registerJobHandler("reminder.rent", async (job) => {
 });
 registerJobHandler("webhook.payment", async (job) => {
   console.info("[job-queue] payment webhook placeholder", job.payload);
+});
+registerJobHandler("approval.escalation", async (job) => {
+  console.info(
+    "[job-queue] approval escalation timer fired",
+    job.payload,
+  );
 });

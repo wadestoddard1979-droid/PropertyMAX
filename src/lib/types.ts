@@ -113,6 +113,26 @@ export type Vendor = {
   contractorUserId: string;
 };
 
+/** Per-property spending / automation policy (Phase 2). */
+export type AutomationPolicy = {
+  id: string;
+  propertyId: string;
+  name: string;
+  spendThresholdCents: number;
+  preapprovedCategories: string[];
+  emergencyProcess: string;
+  preferredVendorIds: string[];
+  escalationContactUserId: string | null;
+  maxWaitHours: number;
+  enabled: boolean;
+};
+
+export type SpendDecisionReason =
+  | "over_threshold"
+  | "preapproved_under_threshold"
+  | "category_not_preapproved"
+  | "policy_disabled_fallback_threshold";
+
 export type WorkOrder = {
   id: string;
   propertyId: string;
@@ -132,6 +152,10 @@ export type WorkOrder = {
   /** Optional link to AI/rule intake classification audit. */
   intakeAuditId?: string | null;
   emergencyFlag?: boolean;
+  /** Why policy routed this estimate (never because AI recommended). */
+  policyDecisionReason?: SpendDecisionReason | null;
+  quoteRequestedAt?: string | null;
+  escalationDueAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -252,7 +276,7 @@ export type ProjectionAssumptions = {
 };
 
 export type AppStore = {
-  version: 4;
+  version: 5;
   /** Domain snapshot — persisted to Supabase Postgres when configured, else local JSON. */
   seededAt: string;
   users: User[];
@@ -269,6 +293,7 @@ export type AppStore = {
   ledger: LedgerEntry[];
   projectionAssumptions: ProjectionAssumptions[];
   intakeAudits: IntakeAudit[];
+  automationPolicies: AutomationPolicy[];
 };
 
 export type SessionUser = {

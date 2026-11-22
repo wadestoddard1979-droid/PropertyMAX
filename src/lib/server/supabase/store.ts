@@ -48,6 +48,7 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     notifications,
     activity,
     intakeAudits,
+    automationPoliciesRes,
   ] = await Promise.all([
     sb.from("profiles").select("*"),
     sb.from("properties").select("*"),
@@ -66,6 +67,7 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     sb.from("notifications").select("*"),
     sb.from("activity_events").select("*"),
     sb.from("intake_audits").select("*"),
+    sb.from("automation_policies").select("*"),
   ]);
 
   const errors = [
@@ -228,12 +230,19 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
     requiresOwnerApproval: w.requires_owner_approval,
     intakeAuditId: w.intake_audit_id ?? null,
     emergencyFlag: Boolean(w.emergency_flag),
+    policyDecisionReason: w.policy_decision_reason ?? null,
+    quoteRequestedAt: w.quote_requested_at ?? null,
+    escalationDueAt: w.escalation_due_at ?? null,
     createdAt: w.created_at,
     updatedAt: w.updated_at,
   }));
 
+  const policyRows = automationPoliciesRes.error
+    ? []
+    : automationPoliciesRes.data || [];
+
   return {
-    version: 4,
+    version: 5,
     seededAt: new Date().toISOString(),
     users,
     properties: props,
@@ -303,6 +312,18 @@ export async function loadStoreFromSupabase(): Promise<AppStore> {
       classification: a.classification,
       trace: a.trace || [],
       createdAt: a.created_at,
+    })),
+    automationPolicies: policyRows.map((p) => ({
+      id: p.id,
+      propertyId: p.property_id,
+      name: p.name,
+      spendThresholdCents: p.spend_threshold_cents,
+      preapprovedCategories: p.preapproved_categories || [],
+      emergencyProcess: p.emergency_process || "",
+      preferredVendorIds: p.preferred_vendor_ids || [],
+      escalationContactUserId: p.escalation_contact_user_id,
+      maxWaitHours: p.max_wait_hours ?? 48,
+      enabled: p.enabled !== false,
     })),
   };
 }
@@ -481,6 +502,9 @@ export async function persistStoreToSupabase(store: AppStore): Promise<void> {
         requires_owner_approval: w.requiresOwnerApproval,
         intake_audit_id: w.intakeAuditId ?? null,
         emergency_flag: Boolean(w.emergencyFlag),
+        policy_decision_reason: w.policyDecisionReason ?? null,
+        quote_requested_at: w.quoteRequestedAt ?? null,
+        escalation_due_at: w.escalationDueAt ?? null,
         created_at: w.createdAt,
         updated_at: w.updatedAt,
       })),
@@ -543,20 +567,35 @@ export async function persistStoreToSupabase(store: AppStore): Promise<void> {
     if (error) throw error;
   }
 
-  // Default automation policy per property
-  if (store.properties.length) {
+  const policies =
+    store.automationPolicies?.length
+      ? store.automationPolicies
+      : store.properties.map((p) => ({
+          id: `policy-${p.id}`,
+          propertyId: p.id,
+          name: "Default spend & vendor policy",
+          spendThresholdCents: p.ownerApprovalThresholdCents,
+          preapprovedCategories: ["Plumbing", "Electrical"],
+          emergencyProcess:
+            "If emergency flag: notify manager immediately, then owner. AI recommendations never authorize spend.",
+          preferredVendorIds: store.vendors.map((v) => v.id),
+          escalationContactUserId: p.managerId,
+          maxWaitHours: 48,
+          enabled: true,
+        }));
+  if (policies.length) {
     const { error } = await sb.from("automation_policies").upsert(
-      store.properties.map((p) => ({
-        id: `policy-${p.id}`,
-        property_id: p.id,
-        name: "Default owner approval threshold",
-        spend_threshold_cents: p.ownerApprovalThresholdCents,
-        preapproved_categories: ["Plumbing"],
-        emergency_process: "Call manager, then owner if spend exceeds threshold.",
-        preferred_vendor_ids: store.vendors.map((v) => v.id),
-        escalation_contact_user_id: p.managerId,
-        max_wait_hours: 48,
-        enabled: true,
+      policies.map((p) => ({
+        id: p.id,
+        property_id: p.propertyId,
+        name: p.name,
+        spend_threshold_cents: p.spendThresholdCents,
+        preapproved_categories: p.preapprovedCategories,
+        emergency_process: p.emergencyProcess,
+        preferred_vendor_ids: p.preferredVendorIds,
+        escalation_contact_user_id: p.escalationContactUserId,
+        max_wait_hours: p.maxWaitHours,
+        enabled: p.enabled,
       })),
     );
     if (error) throw error;

@@ -1,5 +1,6 @@
 import type {
   ActivityEvent,
+  AutomationPolicy,
   DocumentRecord,
   IntakeAnswers,
   IntakeAudit,
@@ -359,4 +360,25 @@ export function fetchIntakeAudit(params: {
   return api<{ audit: IntakeAudit | null; audits?: IntakeAudit[] }>(
     `/api/intake?${q.toString()}`,
   );
+}
+
+export function fetchPolicies(propertyId: string) {
+  return api<{
+    policy: AutomationPolicy;
+    vendors: Vendor[];
+    preferredVendors: Vendor[];
+    people: { id: string; name: string; role: Role }[];
+    canEdit: boolean;
+    hardRule: string;
+  }>(`/api/policies?propertyId=${encodeURIComponent(propertyId)}`);
+}
+
+export function patchPolicy(
+  propertyId: string,
+  patch: Partial<AutomationPolicy>,
+) {
+  return api<{ policy: AutomationPolicy; hardRule: string }>("/api/policies", {
+    method: "PATCH",
+    body: JSON.stringify({ propertyId, patch }),
+  });
 }

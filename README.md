@@ -80,7 +80,11 @@ Records · Documents/Activity · Messages · Maintenance workflow · Owner finan
 
 Tenant/manager **Request Repair** opens a guided conversational intake (flooding, location, shutoff, hazards, photos). A rule-based classifier (optional LLM via `AI_INTAKE_LLM=true`) sets category/urgency/emergency flags and writes an audit trace. **Hard rule:** classification never authorizes spend — estimates and owner approval stay on the existing human/policy workflow.
 
-**Not in this branch:** spending-policy UI / preferred vendor network (later Phase 2).
+## Spending policies & vendor coordination
+
+Manager **Policies** configures per-property spend threshold, preapproved categories, preferred vendors, escalation wait, and emergency process (`automation_policies`). Estimates/quotes are routed by policy — over threshold or non-preapproved category → owner approval; AI recommendations never authorize spend. Managers can **request vendor estimate**; contractors **submit quote**.
+
+**Not in this branch:** Stripe payments / automated owner comms (later).
 
 ## Approval policy
 

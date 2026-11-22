@@ -38,6 +38,7 @@ import PropertyRecords from "@/components/pilot/PropertyRecords";
 import DocumentsActivity from "@/components/pilot/DocumentsActivity";
 import MessagesPanel from "@/components/pilot/MessagesPanel";
 import MaintenanceIntake from "@/components/pilot/MaintenanceIntake";
+import PolicyVendors from "@/components/pilot/PolicyVendors";
 
 type Toast = string | null;
 type PilotView =
@@ -47,7 +48,8 @@ type PilotView =
   | "financials"
   | "records"
   | "documents"
-  | "messages";
+  | "messages"
+  | "policies";
 
 export default function PilotApp() {
   const [loading, setLoading] = useState(true);
@@ -185,7 +187,7 @@ export default function PilotApp() {
               PropertMax
             </p>
             <p className="truncate text-xs text-white/55">
-              Phase 2 · AI intake · {persistence}
+              Phase 2 · policies · {persistence}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -200,6 +202,9 @@ export default function PilotApp() {
             >
               Messages
             </NavChip>
+            {(user.role === "manager" || user.role === "owner") && (
+              <NavChip onClick={() => setView("policies")}>Policies</NavChip>
+            )}
             {(user.role === "owner" || user.role === "manager") && (
               <NavChip onClick={() => setView("financials")}>
                 Financials
@@ -264,6 +269,17 @@ export default function PilotApp() {
               setMessageWorkOrderId(null);
               setView("messages");
             }}
+            onPolicies={() => setView("policies")}
+            onToast={setToast}
+            onError={setError}
+          />
+        )}
+
+        {view === "policies" && property && (
+          <PolicyVendors
+            user={user}
+            propertyId={property.id}
+            onBack={() => setView("home")}
             onToast={setToast}
             onError={setError}
           />
@@ -450,6 +466,7 @@ function RoleHome({
   onRecords,
   onDocuments,
   onMessages,
+  onPolicies,
   onToast,
   onError,
 }: {
@@ -467,6 +484,7 @@ function RoleHome({
   onRecords: () => void;
   onDocuments: () => void;
   onMessages: () => void;
+  onPolicies: () => void;
   onToast: (msg: string) => void;
   onError: (msg: string) => void;
 }) {
@@ -482,7 +500,12 @@ function RoleHome({
         "awaiting_owner_approval",
       ].includes(w.status);
     if (user.role === "contractor")
-      return ["assigned", "scheduled", "in_progress"].includes(w.status);
+      return [
+        "awaiting_estimate",
+        "assigned",
+        "scheduled",
+        "in_progress",
+      ].includes(w.status);
     return true;
   });
 
@@ -517,6 +540,11 @@ function RoleHome({
           <Button variant="secondary" onClick={onMessages}>
             Messages
           </Button>
+          {(user.role === "manager" || user.role === "owner") && (
+            <Button variant="secondary" onClick={onPolicies}>
+              Policies & vendors
+            </Button>
+          )}
           {(user.role === "owner" || user.role === "manager") && (
             <Button onClick={onFinancials}>Open financials</Button>
           )}
@@ -867,17 +895,64 @@ function WorkOrderDetail({
               Owner note: {workOrder.ownerNote}
             </p>
           )}
+          {workOrder.policyDecisionReason && (
+            <p className="rounded-xl bg-[var(--accent-soft)] px-3 py-2 text-sm text-[var(--accent-deep)]">
+              Policy decision: {workOrder.policyDecisionReason.replaceAll("_", " ")}{" "}
+              (AI cannot override)
+            </p>
+          )}
 
-          {/* Manager: add estimate */}
+          {/* Manager: request vendor quote */}
+          {user.role === "manager" &&
+            ["under_review", "reported"].includes(workOrder.status) && (
+              <div className="space-y-3 border-t border-[var(--line)] pt-4">
+                <p className="text-sm font-semibold">Request vendor estimate</p>
+                <p className="text-xs text-[var(--muted)]">
+                  Preferred vendors are configured under Policies. Quote returns
+                  through spending policy — never auto-approved because AI
+                  recommended it.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    className="rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                    value={vendorId}
+                    onChange={(e) => setVendorId(e.target.value)}
+                  >
+                    {vendors.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name} · {v.trade}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    disabled={busy || !vendorId}
+                    onClick={() =>
+                      run(
+                        () =>
+                          patchWorkOrder(workOrder.id, {
+                            action: "request_vendor_estimate",
+                            vendorId,
+                          }).then(() => undefined),
+                        "Vendor estimate requested",
+                      )
+                    }
+                  >
+                    Request quote
+                  </Button>
+                </div>
+              </div>
+            )}
+
+          {/* Manager: add estimate directly */}
           {user.role === "manager" &&
             ["under_review", "reported", "awaiting_estimate"].includes(
               workOrder.status,
             ) && (
               <div className="space-y-3 border-t border-[var(--line)] pt-4">
-                <p className="text-sm font-semibold">Add estimate</p>
+                <p className="text-sm font-semibold">Enter estimate (manager)</p>
                 <p className="text-xs text-[var(--muted)]">
-                  Over {moneyFromCents(threshold)} → owner must approve. At or
-                  under → auto-approved for assignment.
+                  Policy threshold {moneyFromCents(threshold)}. Preapproved
+                  categories under threshold auto-clear; others need owner.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <input
@@ -918,7 +993,7 @@ function WorkOrderDetail({
                           estimateNotes,
                           vendorId,
                         });
-                      }, "Estimate saved")
+                      }, "Estimate saved · policy applied")
                     }
                   >
                     Save estimate (${estimateDollars || "0"})
@@ -929,13 +1004,58 @@ function WorkOrderDetail({
                     onClick={() => {
                       setEstimateDollars("150");
                       setEstimateNotes(
-                        "Under-threshold illustrative quote for auto-approve demo.",
+                        "Under-threshold illustrative quote for preapproved demo.",
                       );
                     }}
                   >
                     Try $150 (under threshold)
                   </Button>
                 </div>
+              </div>
+            )}
+
+          {/* Contractor: submit quote */}
+          {user.role === "contractor" &&
+            workOrder.status === "awaiting_estimate" && (
+              <div className="space-y-3 border-t border-[var(--line)] pt-4">
+                <p className="text-sm font-semibold">Submit your quote</p>
+                <p className="text-xs text-[var(--muted)]">
+                  Your quote is routed by the property spend policy. You cannot
+                  authorize owner spend.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    className="w-28 rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                    value={estimateDollars}
+                    onChange={(e) => setEstimateDollars(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="$"
+                  />
+                </div>
+                <textarea
+                  className="w-full rounded-xl border border-[var(--line-strong)] px-3 py-2 text-sm"
+                  rows={2}
+                  value={estimateNotes}
+                  onChange={(e) => setEstimateNotes(e.target.value)}
+                  placeholder="Parts + labor notes"
+                />
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      const cents = Math.round(
+                        parseFloat(estimateDollars) * 100,
+                      );
+                      await patchWorkOrder(workOrder.id, {
+                        action: "submit_vendor_quote",
+                        estimateCents: cents,
+                        estimateNotes,
+                      });
+                    }, "Quote submitted · policy routing applied")
+                  }
+                >
+                  Submit quote (${estimateDollars || "0"})
+                </Button>
               </div>
             )}
 

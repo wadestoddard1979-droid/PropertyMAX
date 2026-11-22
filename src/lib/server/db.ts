@@ -28,9 +28,30 @@ function migrateStore(store: AppStore): AppStore {
   if (!store.messageThreads) store.messageThreads = [];
   if (!store.messages) store.messages = [];
   if (!store.intakeAudits) store.intakeAudits = [];
+  if (!store.automationPolicies) store.automationPolicies = [];
   for (const w of store.workOrders || []) {
     if (w.intakeAuditId === undefined) w.intakeAuditId = null;
     if (w.emergencyFlag === undefined) w.emergencyFlag = false;
+    if (w.policyDecisionReason === undefined) w.policyDecisionReason = null;
+    if (w.quoteRequestedAt === undefined) w.quoteRequestedAt = null;
+    if (w.escalationDueAt === undefined) w.escalationDueAt = null;
+  }
+  for (const p of store.properties || []) {
+    if (!store.automationPolicies.some((x) => x.propertyId === p.id)) {
+      store.automationPolicies.push({
+        id: `policy-${p.id}`,
+        propertyId: p.id,
+        name: "Default spend & vendor policy",
+        spendThresholdCents: p.ownerApprovalThresholdCents,
+        preapprovedCategories: ["Plumbing", "Electrical"],
+        emergencyProcess:
+          "If emergency flag: notify manager immediately, then owner. AI recommendations never authorize spend.",
+        preferredVendorIds: (store.vendors || []).map((v) => v.id),
+        escalationContactUserId: p.managerId,
+        maxWaitHours: 48,
+        enabled: true,
+      });
+    }
   }
 
   for (const p of store.properties || []) {
@@ -66,7 +87,7 @@ function migrateStore(store: AppStore): AppStore {
     }
   }
 
-  store.version = 4;
+  store.version = 5;
   return store;
 }
 
