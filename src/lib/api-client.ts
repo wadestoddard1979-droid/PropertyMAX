@@ -35,7 +35,13 @@ export function fetchMe() {
   return api<{
     user: SessionUser | null;
     property: Property | null;
-    policy: { ownerApprovalThresholdCents: number; persistence: string };
+    policy: {
+      ownerApprovalThresholdCents: number;
+      persistence: string;
+      auth?: string;
+      jobQueue?: string;
+      documentStorage?: string;
+    };
     pilotUsers: {
       email: string;
       name: string;
@@ -43,6 +49,34 @@ export function fetchMe() {
       passwordHint: string;
     }[];
   }>("/api/auth/me");
+}
+
+export function fetchSystemStatus() {
+  return api<{
+    persistence: string;
+    persistenceLabel: string;
+    supabaseConfigured: boolean;
+    allowDemoLogin: boolean;
+    auth: string;
+    jobQueue: string;
+    documentStorage: string;
+    productionQueueNote: string;
+    recentJobs: { id: string; kind: string; status: string }[];
+  }>("/api/system/status");
+}
+
+export function enqueuePilotJob(kind: string, payload?: Record<string, unknown>) {
+  return api<{ job: { id: string; kind: string; status: string } }>("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify({ action: "enqueue", kind, payload }),
+  });
+}
+
+export function drainPilotJobs() {
+  return api<{ processed: number }>("/api/jobs", {
+    method: "POST",
+    body: JSON.stringify({ action: "drain" }),
+  });
 }
 
 export function login(email: string, password: string) {

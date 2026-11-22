@@ -1,15 +1,19 @@
 import { getSession } from "@/lib/server/auth";
-import { readStore } from "@/lib/server/db";
+import { systemStatus } from "@/lib/server/config";
+import { persistenceLabel, readStore } from "@/lib/server/db";
 import { propertiesVisibleTo } from "@/lib/server/records";
 
 export async function GET() {
   const store = await readStore();
   const fallbackProperty = store.properties[0] ?? null;
+  const sys = systemStatus();
   const policy = {
     ownerApprovalThresholdCents:
       fallbackProperty?.ownerApprovalThresholdCents ?? 20000,
-    persistence: "local-json",
-    // TODO(supabase): auth + Postgres
+    persistence: persistenceLabel(),
+    auth: sys.auth,
+    jobQueue: sys.jobQueue,
+    documentStorage: sys.documentStorage,
   };
   const pilotUsers = store.users.map((u) => ({
     email: u.email,

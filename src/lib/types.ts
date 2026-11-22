@@ -201,7 +201,7 @@ export type ProjectionAssumptions = {
 
 export type AppStore = {
   version: 3;
-  /** TODO(supabase): migrate this file store to Postgres + RLS. */
+  /** Domain snapshot — persisted to Supabase Postgres when configured, else local JSON. */
   seededAt: string;
   users: User[];
   properties: Property[];

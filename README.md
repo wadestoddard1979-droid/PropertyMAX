@@ -1,28 +1,20 @@
-# PropertMax — Phase 1 Pilot (closeout)
+# PropertMax — Phase 2 foundation
 
-Production-oriented Phase 1 path for the townhouse pilot:
-
-1. **Property / unit / lease records** — manager edit; owner/tenant authorized views
-2. **Documents + activity history** — role-filtered surfaces for all roles
-3. **Maintenance:** tenant intake → work order → estimate → owner approval (over threshold) → contractor
-4. **Owner financials:** cash flow (NOI vs after debt service), actual vs forecast, adjustable projections; **manual rent/expense entry** clearly labeled illustrative vs manual vs verified
-5. **Messages** — property and work-order threads with server RBAC
-
-Sites-style clickable prototype remains at `/sites-demo`.
+Property management OS pilot (Beachy Renovations townhouse). Phase 1 closeout features remain; this branch adds the **Supabase foundation** while keeping a zero-secret local demo mode.
 
 ## Stack
 
 - Next.js + TypeScript
-- Cookie session RBAC (server-checked on every API mutation)
-- Durable local JSON store at `data/propertmax-store.json`
-- **TODO(supabase):** Auth + Postgres + RLS (types already centralized in `src/lib/types.ts`)
+- **Default (no secrets):** cookie demo RBAC + local JSON `data/propertmax-store.json`
+- **With Supabase env:** Postgres primary store, Auth path + demo fallback, Storage bucket `documents`, DB-backed `job_queue`, RLS policies
 
-## Approval policy
+## Local remote after rename
 
-Property `ownerApprovalThresholdCents` defaults to **$200**.
+If an older clone still points at `PeopertyMAX`:
 
-- Estimate **> $200** → `awaiting_owner_approval`
-- Estimate **≤ $200** → auto-approved for assignment
+```bash
+git remote set-url origin https://github.com/wadestoddard1979-droid/PropertyMAX.git
+```
 
 ## Pilot logins
 
@@ -35,27 +27,57 @@ Password for all: `pilot`
 | Tenant | tenant@propertmax.demo |
 | Contractor | contractor@propertmax.demo |
 
-## Run
+## Run without Supabase (default)
 
 ```bash
 npm install
 npm run build && npm run start -- -p 3000
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000 — persistence shows `local-json`. Demo logins work.
 
-## Phase 1 closeout click paths
+## Run with Supabase
 
-1. Sign in as **Manager** → **Records** → edit property/unit/lease → Save
-2. **Docs** → view role-filtered documents + activity timeline; add a document reference
-3. **Messages** → open faucet work-order thread or start a property thread
-4. Sign in as **Owner** → **Financials** → review ledger badges (illustrative vs manual) → add a manual entry
-5. Sign in as **Tenant** → **Records** (lease view) · **Message** · **Request Repair**
+1. Copy `.env.example` → `.env.local` and fill:
 
-## Data quality labels (ledger)
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
 
-| Source | Meaning |
+2. Apply `supabase/migrations/20261122000000_phase2_foundation.sql` (see `supabase/README.md`).
+
+3. Seed:
+
+```bash
+npm run seed:supabase
+```
+
+4. Start the app. `/api/system/status` should report `persistence: "supabase"`.
+
+5. Auth: Supabase Auth is tried first; pilot demo passwords remain available unless `ALLOW_DEMO_LOGIN=false`.
+
+## Scripts
+
+| Script | Purpose |
 |--------|---------|
-| `illustrative` | Seed / demo planning figures |
-| `manual` | Human-entered in the pilot UI — **not bank-verified** |
-| `verified` | Reserved for future bank sync (not produced in Phase 1) |
+| `npm run seed` | Seed local JSON (or Supabase if env present) |
+| `npm run seed:supabase` | Force seed into Supabase |
+| `npm run build` | Works **without** secrets |
+
+## Phase 1 surfaces (still present)
+
+Records · Documents/Activity · Messages · Maintenance workflow · Owner financials (illustrative vs manual ledger labels)
+
+## Phase 2 foundation (this branch)
+
+- Schema: orgs, profiles/memberships, properties, units, leases, work orders, ledger/expenses, payment_refs, documents, messages, automation_policies, audit_logs, job_queue
+- Auth adapter with demo fallback
+- RLS + server-side checks
+- Storage adapter for documents
+- Durable job queue abstraction (DB or local file)
+
+**Not in this PR:** AI maintenance intake (later Phase 2 work).
+
+## Approval policy
+
+Property `ownerApprovalThresholdCents` defaults to **$200**.

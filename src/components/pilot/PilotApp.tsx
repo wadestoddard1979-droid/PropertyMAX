@@ -9,8 +9,11 @@ import {
 } from "react";
 import {
   createWorkOrder,
+  drainPilotJobs,
+  enqueuePilotJob,
   fetchMe,
   fetchNotifications,
+  fetchSystemStatus,
   fetchWorkOrders,
   login,
   logout,
@@ -50,6 +53,8 @@ export default function PilotApp() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
   const [threshold, setThreshold] = useState(20000);
+  const [persistence, setPersistence] = useState("local-json");
+  const [authMode, setAuthMode] = useState("cookie-demo");
   const [pilotUsers, setPilotUsers] = useState<
     { email: string; name: string; role: string; passwordHint: string }[]
   >([]);
@@ -66,10 +71,17 @@ export default function PilotApp() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const me = await fetchMe();
+    const [me, sys] = await Promise.all([
+      fetchMe(),
+      fetchSystemStatus().catch(() => null),
+    ]);
     setUser(me.user);
     setProperty(me.property);
     setThreshold(me.policy?.ownerApprovalThresholdCents ?? 20000);
+    setPersistence(
+      sys?.persistenceLabel || me.policy?.persistence || "local-json",
+    );
+    setAuthMode(sys?.auth || me.policy?.auth || "cookie-demo");
     setPilotUsers(me.pilotUsers ?? []);
     if (!me.user) {
       setWorkOrders([]);
@@ -155,6 +167,8 @@ export default function PilotApp() {
       <LoginScreen
         pilotUsers={pilotUsers}
         threshold={threshold}
+        persistence={persistence}
+        authMode={authMode}
         error={error}
         onLogin={handleLogin}
       />
@@ -170,7 +184,7 @@ export default function PilotApp() {
               PropertMax
             </p>
             <p className="truncate text-xs text-white/55">
-              Phase 1 closeout · records · docs · messages · financials
+              Phase 2 foundation · {persistence} · {authMode}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -235,6 +249,8 @@ export default function PilotApp() {
             notifications={notifications}
             activity={activity}
             threshold={threshold}
+            persistence={persistence}
+            authMode={authMode}
             onOpen={(id) => {
               setSelectedId(id);
               setView("detail");
@@ -247,6 +263,8 @@ export default function PilotApp() {
               setMessageWorkOrderId(null);
               setView("messages");
             }}
+            onToast={setToast}
+            onError={setError}
           />
         )}
 
@@ -343,11 +361,15 @@ export default function PilotApp() {
 function LoginScreen({
   pilotUsers,
   threshold,
+  persistence,
+  authMode,
   error,
   onLogin,
 }: {
   pilotUsers: { email: string; name: string; role: string; passwordHint: string }[];
   threshold: number;
+  persistence: string;
+  authMode: string;
   error: string | null;
   onLogin: (email: string) => void;
 }) {
@@ -357,14 +379,13 @@ function LoginScreen({
         PropertMax
       </p>
       <p className="mt-2 max-w-xl text-[var(--muted)]">
-        Phase 1 closeout — property records, documents, messages, maintenance,
-        and owner cash flow. Password for all sample users:{" "}
-        <strong>pilot</strong>. Owner approval required over{" "}
-        {moneyFromCents(threshold)}.
+        Phase 2 foundation — Supabase schema/auth/storage/queue with local-json
+        fallback. Password for all sample users: <strong>pilot</strong>. Owner
+        approval required over {moneyFromCents(threshold)}.
       </p>
       <p className="mt-2 text-xs text-[var(--muted)]">
-        Persistence: local JSON file (`data/propertmax-store.json`). TODO:
-        Supabase Auth + Postgres RLS.
+        Persistence: <strong>{persistence}</strong> · Auth: {authMode}. Without
+        Supabase env vars the app stays on local JSON so builds work offline.
       </p>
       {error && (
         <p className="mt-4 text-sm text-[var(--danger)]">{error}</p>
@@ -420,12 +441,16 @@ function RoleHome({
   notifications,
   activity,
   threshold,
+  persistence,
+  authMode,
   onOpen,
   onNew,
   onFinancials,
   onRecords,
   onDocuments,
   onMessages,
+  onToast,
+  onError,
 }: {
   user: SessionUser;
   property: Property | null;
@@ -433,12 +458,16 @@ function RoleHome({
   notifications: Notification[];
   activity: ActivityEvent[];
   threshold: number;
+  persistence: string;
+  authMode: string;
   onOpen: (id: string) => void;
   onNew: () => void;
   onFinancials: () => void;
   onRecords: () => void;
   onDocuments: () => void;
   onMessages: () => void;
+  onToast: (msg: string) => void;
+  onError: (msg: string) => void;
 }) {
   const attention = workOrders.filter((w) => {
     if (user.role === "owner")
@@ -495,6 +524,58 @@ function RoleHome({
           )}
         </div>
       </header>
+
+      <section className="panel p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <SectionLabel>Phase 2 foundation</SectionLabel>
+            <p className="mt-1 text-sm text-[var(--ink-soft)]">
+              Persistence <strong>{persistence}</strong> · Auth {authMode}
+            </p>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Supabase Postgres + RLS + Storage + job queue when env is set;
+              otherwise local JSON demo mode (no secrets required).
+            </p>
+          </div>
+          <StatusChip
+            tone={persistence.includes("supabase") ? "positive" : "neutral"}
+          >
+            {persistence}
+          </StatusChip>
+        </div>
+        {user.role === "manager" && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await enqueuePilotJob("reminder.rent", {
+                    propertyId: property?.id,
+                  });
+                  onToast("Queued rent reminder job");
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : "Enqueue failed");
+                }
+              }}
+            >
+              Enqueue reminder job
+            </Button>
+            <Button
+              variant="soft"
+              onClick={async () => {
+                try {
+                  const res = await drainPilotJobs();
+                  onToast(`Processed ${res.processed} due job(s)`);
+                } catch (e) {
+                  onError(e instanceof Error ? e.message : "Drain failed");
+                }
+              }}
+            >
+              Drain job queue
+            </Button>
+          </div>
+        )}
+      </section>
 
       {user.role === "owner" && property && (
         <button
