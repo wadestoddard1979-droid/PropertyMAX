@@ -47,7 +47,7 @@ export function ensureFinancialDefaults(store: AppStore) {
       store.projectionAssumptions.push(defaultAssumptions(p.id));
     }
   }
-  store.version = 2;
+  store.version = 7;
 }
 
 export function getAssumptions(
@@ -264,6 +264,7 @@ export function addLedgerEntry(
   }
   assertPropertyAccess(store, actor, input.propertyId);
   ensureFinancialDefaults(store);
+  // Phase 1: human-entered lines are always "manual" (never bank-verified).
   const entry: LedgerEntry = {
     id: id("led"),
     propertyId: input.propertyId,
@@ -275,6 +276,15 @@ export function addLedgerEntry(
     createdAt: new Date().toISOString(),
   };
   store.ledger.unshift(entry);
+  store.activity.unshift({
+    id: id("act"),
+    workOrderId: null,
+    propertyId: input.propertyId,
+    actorUserId: actor.id,
+    kind: "ledger.manual_entry",
+    message: `${actor.name} added manual ledger entry “${entry.label}” (not bank-verified).`,
+    createdAt: entry.createdAt,
+  });
   return entry;
 }
 

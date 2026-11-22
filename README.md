@@ -1,25 +1,20 @@
-# PropertMax — Phase 1 Pilot
+# PropertMax — Phase 2 foundation
 
-Production-oriented Phase 1 path for the townhouse pilot:
-
-1. **Maintenance:** tenant intake → work order → estimate → owner approval (over threshold) → contractor
-2. **Owner financials:** cash flow (NOI vs after debt service), actual vs forecast, adjustable 12-mo / 3-yr / 5-yr projections, renovation ROI / vacancy cost insights
-
-Sites-style clickable prototype remains at `/sites-demo`.
+Property management OS pilot (Beachy Renovations townhouse). Phase 1 closeout features remain; this branch adds the **Supabase foundation** while keeping a zero-secret local demo mode.
 
 ## Stack
 
 - Next.js + TypeScript
-- Cookie session RBAC (server-checked on every API mutation)
-- Durable local JSON store at `data/propertmax-store.json`
-- **TODO(supabase):** Auth + Postgres + RLS (types already centralized in `src/lib/types.ts`)
+- **Default (no secrets):** cookie demo RBAC + local JSON `data/propertmax-store.json`
+- **With Supabase env:** Postgres primary store, Auth path + demo fallback, Storage bucket `documents`, DB-backed `job_queue`, RLS policies
 
-## Approval policy
+## Local remote after rename
 
-Property `ownerApprovalThresholdCents` defaults to **$200**.
+If an older clone still points at `PeopertyMAX`:
 
-- Estimate **> $200** → `awaiting_owner_approval`
-- Estimate **≤ $200** → auto-approved for assignment
+```bash
+git remote set-url origin https://github.com/wadestoddard1979-droid/PropertyMAX.git
+```
 
 ## Pilot logins
 
@@ -32,25 +27,65 @@ Password for all: `pilot`
 | Tenant | tenant@propertmax.demo |
 | Contractor | contractor@propertmax.demo |
 
-## Run
+## Run without Supabase (default)
 
 ```bash
 npm install
 npm run build && npm run start -- -p 3000
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000 — persistence shows `local-json`. Demo logins work.
 
-## Owner financials click path
+## Run with Supabase
 
-1. Sign in as **Owner**
-2. **Open financials** (or header Financials)
-3. Review actual vs forecast cash flow + pending faucet approval card
-4. Switch **12 mo / 3 yr / 5 yr**, edit assumptions → Save
-5. Optionally add a manual ledger entry (labeled manual, not bank-verified)
+1. Copy `.env.example` → `.env.local` and fill:
 
-## Branches
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
 
-- `cursor/townhouse-sites-demo-0807` — Sites demo
-- `cursor/maintenance-mvp-0807` — maintenance MVP
-- `cursor/owner-financials-mvp-0807` — owner financials (this branch)
+2. Apply `supabase/migrations/20261122000000_phase2_foundation.sql` (see `supabase/README.md`).
+
+3. Seed:
+
+```bash
+npm run seed:supabase
+```
+
+4. Start the app. `/api/system/status` should report `persistence: "supabase"`.
+
+5. Auth: Supabase Auth is tried first; pilot demo passwords remain available unless `ALLOW_DEMO_LOGIN=false`.
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm run seed` | Seed local JSON (or Supabase if env present) |
+| `npm run seed:supabase` | Force seed into Supabase |
+| `npm run build` | Works **without** secrets |
+
+## Phase 1 surfaces (still present)
+
+Records · Documents/Activity · Messages · Maintenance workflow · Owner financials (illustrative vs manual ledger labels)
+
+## Phase 2 foundation (this branch)
+
+- Schema: orgs, profiles/memberships, properties, units, leases, work orders, ledger/expenses, payment_refs, documents, messages, automation_policies, audit_logs, job_queue
+- Auth adapter with demo fallback
+- RLS + server-side checks
+- Storage adapter for documents
+- Durable job queue abstraction (DB or local file)
+
+## AI maintenance intake
+
+Tenant/manager **Request Repair** opens a guided conversational intake (flooding, location, shutoff, hazards, photos). A rule-based classifier (optional LLM via `AI_INTAKE_LLM=true`) sets category/urgency/emergency flags and writes an audit trace. **Hard rule:** classification never authorizes spend — estimates and owner approval stay on the existing human/policy workflow.
+
+## Spending policies & vendor coordination
+
+Manager **Policies** configures per-property spend threshold, preapproved categories, preferred vendors, escalation wait, and emergency process (`automation_policies`). Estimates/quotes are routed by policy — over threshold or non-preapproved category → owner approval; AI recommendations never authorize spend. Managers can **request vendor estimate**; contractors **submit quote**.
+
+**Not in this branch:** Stripe payments / automated owner comms (later).
+
+## Approval policy
+
+Property `ownerApprovalThresholdCents` defaults to **$200**.
